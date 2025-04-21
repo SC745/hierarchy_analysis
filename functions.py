@@ -334,8 +334,6 @@ def GetEdge(source_id, target_id, elements):
                 return element
 
 
-
-
 #Запросы и их обработка
 
 #Получить датафрейм вершин из базы
@@ -482,6 +480,15 @@ def SaveGraphToDB(project_id, element_data):
     except: return False
     
     return True
+
+
+def CheckUserCredentials(login, password):
+    query = f"select password from tbl_users where login = '{login}'"
+    cursor.execute(query)
+    correct_password = cursor.fetchone()
+    if correct_password: return password == correct_password[0]
+
+    return False
 
 
 #Формирование элементов страницы
