@@ -28,45 +28,44 @@ nodebox_props = {
 
 #Получить элементы для отрисовки при инициализации
 def GetHierarchyPreset(nodes_df, edges_df):
-    nodes_df, edges_df = ExcludeDeletedElements(nodes_df, edges_df)
-
     node_list = []
     edge_list = []
 
-    for level in range(1, nodes_df["level"].max() + 1):
-        nodelevel_df = nodes_df.loc[nodes_df["level"] == level]
-        for index, row in nodelevel_df.iterrows():
-            node_data = {}
-            node_data["id"] = row["id"]
-            node_data["name"] = row["name"]
-            node_data["width"] = 0
-            node_data["height"] = 0
-            node_data["level"] = level
+    if len(nodes_df):
+        for level in range(1, nodes_df["level"].max() + 1):
+            nodelevel_df = nodes_df.loc[nodes_df["level"] == level]
+            for index, row in nodelevel_df.iterrows():
+                node_data = {}
+                node_data["id"] = row["id"]
+                node_data["name"] = row["name"]
+                node_data["width"] = 0
+                node_data["height"] = 0
+                node_data["level"] = level
 
-            node_position = {}
-            node_position["x"] = 0
-            node_position["y"] = 0
+                node_position = {}
+                node_position["x"] = 0
+                node_position["y"] = 0
 
-            node_object = {}
-            node_object["data"] = node_data
-            node_object["position"] = node_position
-            node_object["classes"] = "default"
+                node_object = {}
+                node_object["data"] = node_data
+                node_object["position"] = node_position
+                node_object["classes"] = "default"
 
-            node_list.append(node_object)
+                node_list.append(node_object)
 
-    node_list = RefreshNodePositionsSizes(node_list)
+        node_list = RefreshNodePositionsSizes(node_list)
 
-    for index, row in edges_df.iterrows():
-        edge_data = {}
-        edge_data["id"] = row["id"]
-        edge_data["source"] = row["source"]
-        edge_data["target"] = row["target"]
+        for index, row in edges_df.iterrows():
+            edge_data = {}
+            edge_data["id"] = row["id"]
+            edge_data["source"] = row["source"]
+            edge_data["target"] = row["target"]
 
-        edge_object = {}
-        edge_object["data"] = edge_data
-        edge_object["classes"] = "default"
+            edge_object = {}
+            edge_object["data"] = edge_data
+            edge_object["classes"] = "default"
 
-        edge_list.append(edge_object)
+            edge_list.append(edge_object)
         
     return node_list + edge_list
 
@@ -218,7 +217,7 @@ def AddElement(element, element_data):
             AddEdge(CreateEdgeObject(row["id"], element["data"]["id"]), element_data)
             if row["id"] not in list(element_data["state"]["cascade_deleted"].keys()) + list(element_data["state"]["manually_deleted"].keys()): deleted = False
 
-        if deleted: element_data["state"]["cascade_deleted"][element["data"]["id"]] = element
+        if deleted and len(upper_level_nodes): element_data["state"]["cascade_deleted"][element["data"]["id"]] = element
 
         lower_level_nodes = nodes_df.loc[nodes_df["level"] == element["data"]["level"] + 1]
         for index, row in lower_level_nodes.iterrows():
@@ -313,8 +312,11 @@ def ElementsToDfs(elements):
 
             node_list.append(df_row)
 
-    nodes_df = pd.DataFrame(node_list)
-    edges_df = pd.DataFrame(edge_list)
+    if len(node_list): nodes_df = pd.DataFrame(node_list)
+    else: nodes_df = pd.DataFrame(columns = ["id", "name", "width", "height", "level", "classes"])
+
+    if len(edge_list): edges_df = pd.DataFrame(edge_list)
+    else: edges_df = pd.DataFrame(columns = ["id", "source", "target", "deleted", "classes"])
 
     return nodes_df, edges_df
 
@@ -381,28 +383,27 @@ def GetEdges(project_id, user_id):
         
         cursor.execute(query)
         edges = pd.DataFrame(cursor.fetchall(), columns = ["id", "source", "target"])
-        deleted = [False] * len(edges)
-        edges["deleted"] = deleted
+        edges["deleted"] = False
 
     return edges
 
-#Получить датафреймы вершин и ребер из базы с опциональной очисткой от удаленных элементов
-def GetProjectDfs(project_id, expert_id, exclude_deleted):
+#Получить датафреймы вершин и ребер из базы
+def GetProjectDfs(project_id, expert_id):
     nodes_df = GetNodes(project_id)
     edges_df = GetEdges(project_id, expert_id)
 
-    if exclude_deleted: nodes_df, edges_df = ExcludeDeletedElements(nodes_df, edges_df)
-
+    nodes_df, edges_df = ExcludeDeletedElements(nodes_df, edges_df)
     nodes_df = GetNodeLevels(nodes_df, edges_df)
 
     return nodes_df, edges_df
 
 #Очистить датафреймы вершин и ребер от удаленных элементов
 def ExcludeDeletedElements(nodes_df, edges_df):
-    head_id = nodes_df.loc[~nodes_df["id"].isin(edges_df["target"])].iloc[0]["id"]
+    if len(nodes_df):
+        head_id = nodes_df.loc[~nodes_df["id"].isin(edges_df["target"])].iloc[0]["id"]
 
-    edges_df.drop(edges_df.loc[edges_df["deleted"] == True].index, inplace = True)
-    nodes_df.drop(nodes_df.loc[~nodes_df["id"].isin(edges_df["target"]) & (nodes_df["id"] != head_id)].index, inplace = True)
+        edges_df.drop(edges_df.loc[edges_df["deleted"] == True].index, inplace = True)
+        nodes_df.drop(nodes_df.loc[~nodes_df["id"].isin(edges_df["target"]) & (nodes_df["id"] != head_id)].index, inplace = True)
 
     return nodes_df, edges_df
 
@@ -411,20 +412,17 @@ def GetNodeLevels(nodes_df, edges_df):
     levels = [0] * len(nodes_df)
     nodes_df["level"] = levels
 
-    visited = []
+    if len(nodes_df):
+        head_id = nodes_df.loc[~nodes_df["id"].isin(edges_df["target"])].iloc[0]["id"]
+        source_id = head_id
+        nodes_df.loc[nodes_df["id"] == head_id, "level"] = 1
 
-    head_id = nodes_df.loc[~nodes_df["id"].isin(edges_df["target"])].iloc[0]["id"]
-    source_id = head_id
-    nodes_df.loc[nodes_df["id"] == head_id, "level"] = 1
-
-    while len(visited) < len(nodes_df):
-        source_id = nodes_df.loc[~nodes_df["id"].isin(visited) & (nodes_df["level"] != 0)].iloc[0]["id"]
-
-
-        children = list(edges_df[edges_df["source"] == source_id]["target"])
-        for child_id in children: nodes_df.loc[nodes_df["id"] == child_id, "level"] = nodes_df.loc[nodes_df["id"] == source_id, "level"].values[0] + 1
-
-        visited.append(source_id)
+        visited = []
+        while len(visited) < len(nodes_df):
+            source_id = nodes_df.loc[~nodes_df["id"].isin(visited) & (nodes_df["level"] != 0)].iloc[0]["id"]
+            children = list(edges_df[edges_df["source"] == source_id]["target"])
+            for child_id in children: nodes_df.loc[nodes_df["id"] == child_id, "level"] = nodes_df.loc[nodes_df["id"] == source_id, "level"].values[0] + 1
+            visited.append(source_id)
         
     return nodes_df.sort_values(by="level")
 
@@ -458,19 +456,20 @@ def SaveGraphToDB(project_id, element_data):
         node_args = ','.join(cursor.mogrify("(%s,%s,%s)", i).decode('utf-8') for i in node_tuples)
 
         cursor.execute(f"delete from tbl_nodes where project_id = {project_id}")
-        cursor.execute("insert into tbl_nodes (uuid, node_name, project_id) values " + (node_args) + " returning id, uuid")
+        if len(node_args): 
+            cursor.execute("insert into tbl_nodes (uuid, node_name, project_id) values " + (node_args) + " returning id, uuid")
 
+            inserted_nodes = pd.DataFrame(cursor.fetchall(), columns = ["id", "uuid"])
+            for index, row in edges_df.iterrows():
+                edges_df.loc[index, "source_id"] = inserted_nodes.loc[inserted_nodes["uuid"] == row["source"]].iloc[0]["id"]
+                edges_df.loc[index, "target_id"] = inserted_nodes.loc[inserted_nodes["uuid"] == row["target"]].iloc[0]["id"]
+            edges_df.drop(["source", "target"], axis=1, inplace = True)
 
-        inserted_nodes = pd.DataFrame(cursor.fetchall(), columns = ["id", "uuid"])
-        for index, row in edges_df.iterrows():
-            edges_df.loc[index, "source_id"] = inserted_nodes.loc[inserted_nodes["uuid"] == row["source"]].iloc[0]["id"]
-            edges_df.loc[index, "target_id"] = inserted_nodes.loc[inserted_nodes["uuid"] == row["target"]].iloc[0]["id"]
-        edges_df.drop(["source", "target"], axis=1, inplace = True)
+            edge_tuples = list(edges_df.itertuples(index = False, name = None))
+            edge_args = ','.join(cursor.mogrify("(%s,%s,%s,%s)", i).decode('utf-8') for i in edge_tuples)
 
-        edge_tuples = list(edges_df.itertuples(index = False, name = None))
-        edge_args = ','.join(cursor.mogrify("(%s,%s,%s,%s)", i).decode('utf-8') for i in edge_tuples)
+            if len(edge_args): cursor.execute("insert into tbl_edges (uuid, project_id, source_id, target_id) values " + (edge_args))
 
-        cursor.execute("insert into tbl_edges (uuid, project_id, source_id, target_id) values " + (edge_args))
         connection.commit()
 
         element_data["state"]["manually_deleted"] = {}
@@ -587,11 +586,13 @@ def GetLevelInfo(nodes_df, level):
 
 #Информация о иерархии
 def GetHierarchyInfo(nodes_df):
-    nodebox_list = []
-    for level in range(1, nodes_df["level"].max() + 1):
-        nodebox = GetLevelInfo(nodes_df, level)
-        nodebox_list.append(nodebox)
-    nodebox_df = pd.DataFrame(nodebox_list).sort_values(by="level")
+    if len(nodes_df):
+        nodebox_list = []
+        for level in range(1, nodes_df["level"].max() + 1):
+            nodebox = GetLevelInfo(nodes_df, level)
+            nodebox_list.append(nodebox)
+        nodebox_df = pd.DataFrame(nodebox_list).sort_values(by="level")
+    else: nodebox_df = pd.DataFrame()
 
     return nodebox_df
 
