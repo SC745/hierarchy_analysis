@@ -3,10 +3,21 @@ import dash_mantine_components as dmc
 import pandas as pd
 import uuid
 import psycopg2
+import numpy as np
+import json
 
 connection = psycopg2.connect(host='localhost', database='hierarchy', user='postgres', password='228228', port = 5432)
 cursor = connection.cursor()
 
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NpEncoder, self).default(obj)
 
 font_props = {
     "font-family": "times.ttf",
@@ -241,6 +252,15 @@ def CancelAddElement(added_element, element_data):
     element_data["list"].remove(added_element)
     if element_data["state"]["selected"] not in element_data["list"]: element_data["state"]["selected"] = None
 
+#Отменить выбор элемента
+def DeselectElement(element_data):
+    if element_data["state"]["selected"]:
+        selected_element = GetElementById(element_data["state"]["selected"]["data"]["id"], element_data["list"])
+        if selected_element["data"]["id"] in element_data["state"]["manually_deleted"].keys(): selected_element["classes"] = "manually_deleted"
+        elif selected_element["data"]["id"] in element_data["state"]["cascade_deleted"].keys(): selected_element["classes"] = "cascade_deleted"
+        else: selected_element["classes"] = "default"
+        element_data["state"]["selected"] = None
+
 #Создать объект "Вершина"
 def CreateNodeObject(parent_node):
     node_data = {}
@@ -332,7 +352,6 @@ def GetEdge(source_id, target_id, elements):
         if "source" in element["data"]:
             if element["data"]["source"] == source_id and element["data"]["target"] == target_id:
                 return element
-
 
 #Запросы и их обработка
 
@@ -435,11 +454,7 @@ def SaveGraphToDB(project_id, element_data):
     edges_df["source_id"] = 0
     edges_df["target_id"] = 0
 
-    if element_data["state"]["selected"]:
-        if element_data["state"]["selected"]["data"]["id"] in element_data["state"]["manually_deleted"].keys(): element_data["state"]["selected"]["classes"] = "manually_deleted"
-        elif element_data["state"]["selected"]["data"]["id"] in element_data["state"]["cascade_deleted"].keys(): element_data["state"]["selected"]["classes"] = "cascade_deleted"
-        else: element_data["state"]["selected"]["classes"] = "default"
-        element_data["state"]["selected"] = None
+    DeselectElement(element_data)
 
     deleted_elements = []
     for element in element_data["list"]:
@@ -481,7 +496,7 @@ def SaveGraphToDB(project_id, element_data):
     
     return True
 
-
+#Проверить пароль при входе
 def CheckUserCredentials(login, password):
     query = f"select password from tbl_users where login = '{login}'"
     cursor.execute(query)
@@ -489,6 +504,59 @@ def CheckUserCredentials(login, password):
     if correct_password: return password == correct_password[0]
 
     return False
+
+#Получить данные пользователя
+def GetUserData(login):
+    query = f"select id, user_name, login from tbl_users where login = '{login}'"
+    cursor.execute(query)
+    user_data = pd.DataFrame(cursor.fetchall(), columns = ["id", "name", "login"]).to_dict("records")[0]
+
+    return user_data
+
+#Получить список проектов пользователя
+def GetUserProjects(user_id):
+    query = f"""select
+        tbl_projects.id,
+        tbl_projects.project_name,
+        tbl_status.status_name,
+        tbl_roles.role_name
+        from
+        tbl_projects
+        inner join tbl_status on tbl_projects.status_id = tbl_status.id
+        inner join tbl_userdata on tbl_userdata.project_id = tbl_projects.id
+        inner join tbl_roles on tbl_roles.id = tbl_userdata.role_id
+        where tbl_userdata.user_id = {user_id}
+        order by tbl_projects.id desc"""
+    
+    cursor.execute(query)
+    project_data = pd.DataFrame(cursor.fetchall(), columns = ["id", "name", "status", "role"])
+    project_data["link"] = [dmc.Button(id = {"type": "project_button", "index": row["id"]}, children = "Перейти") for index, row in project_data.iterrows()]
+    project_data.drop(["id"], axis=1, inplace = True)
+    project_data = project_data.to_dict("records")
+
+    return project_data
+
+#Получить список проектов пользователя
+def GetUserProjectById(user_id, project_id):
+    query = f"""select
+        tbl_projects.id,
+        tbl_projects.project_name,
+        tbl_status.status_name,
+        tbl_roles.role_name
+        from
+        tbl_projects
+        inner join tbl_status on tbl_projects.status_id = tbl_status.id
+        inner join tbl_userdata on tbl_userdata.project_id = tbl_projects.id
+        inner join tbl_roles on tbl_roles.id = tbl_userdata.role_id
+        where 
+        tbl_userdata.user_id = {user_id} and
+        tbl_userdata.project_id = {project_id}"""
+    
+    cursor.execute(query)
+    project_data = pd.DataFrame(cursor.fetchall(), columns = ["id", "name", "status", "role"])
+    project_data = project_data.to_dict("records")[0]
+
+    return project_data
 
 
 #Формирование элементов страницы
@@ -602,8 +670,4 @@ def GetHierarchyInfo(nodes_df):
     else: nodebox_df = pd.DataFrame()
 
     return nodebox_df
-
-
-
-
 

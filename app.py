@@ -1,26 +1,97 @@
 import dash
 from dash import Dash, html, dcc
 import dash_bootstrap_components as dbc
-from flask import Flask
 from dash.dependencies import Input,Output,State
 import dash_mantine_components as dmc
 from dash import _dash_renderer
+import functions
+import page_content
+
+from dash.exceptions import PreventUpdate
+import os
+from flask import Flask, request, redirect, session
+from flask_login import login_user, LoginManager, UserMixin, logout_user, current_user
 
 
 _dash_renderer._set_react_version("18.2.0")
 
 server = Flask(__name__)
 
+@dash.callback(
+    output = {
+        "redirect_trigger": Output({"type": "redirect", "index": "login"}, "pathname"),
+        "error_state": Output("error_message", "display"),
+    },
+    inputs = {
+        "input": {
+            "clickdata": Input("login_button", "n_clicks"),
+            "login": State("login_input", "value"),
+            "password": State("password_input", "value")
+        }
+    },
+    prevent_initial_call = True
+)
+def Login(input):
+    if not input["clickdata"]: raise PreventUpdate
+    successful_login = functions.CheckUserCredentials(input["login"], input["password"])
+
+    output = {}
+    if successful_login:
+        login_user(User(input["login"]))
+        url = "/projects"
+        if 'url' in session:
+            if session['url']:
+                url = session['url']
+                session['url'] = None
+
+        output["redirect_trigger"] = url
+        output["error_state"] = "none"
+    else:
+        output["redirect_trigger"] = "/login"
+        output["error_state"] = "block"
+        
+    return output
+
+
 app = dash.Dash(
     server=server,
     url_base_pathname='/',
     suppress_callback_exceptions=False,
-    assets_folder='assets',
     title='Hierarchy analysis',
     use_pages=True,
     pages_folder='pages',
     external_stylesheets=dmc.styles.ALL
 )
-                            
+
+
+a = os.getenv("SECRET_KEY")
+server.config.update(SECRET_KEY=os.getenv("SECRET_KEY"))
+
+login_manager = LoginManager()
+login_manager.init_app(server)
+login_manager.login_view = "/login"
+
+class User(UserMixin):
+    def __init__(self, username):
+        self.id = username
+        self.userdata = functions.GetUserData(username)
+
+@login_manager.user_loader
+def load_user(username):
+    return User(username)
+
+app.layout = dmc.Box(
+    id = "session_data",
+    children = [
+        dcc.Store(id = {"type": "store", "index": "user_data"}, storage_type = "session", data = False),
+        dcc.Store(id = {"type": "store", "index": "project_data"}, storage_type = "session", data = False),
+        dcc.Store(id = {"type": "store", "index": "element_data"}, storage_type = "session", data = False),
+        dash.page_container,
+    ]
+)
+
+app.layout = dmc.MantineProvider(app.layout)
+
+
 if __name__ == '__main__':
     server.run(debug=True,port=9662,use_reloader=True)
