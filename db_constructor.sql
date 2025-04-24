@@ -37,7 +37,9 @@ create table tbl_userdata(
 	id serial PRIMARY KEY,
 	user_id int references tbl_users(id) on delete cascade,
 	role_id int references tbl_roles(id),
-	project_id int references tbl_projects(id) on delete cascade
+	project_id int references tbl_projects(id) on delete CASCADE,
+	de_completed bool,
+	ce_completed bool
 )
 
 create table tbl_superiority(

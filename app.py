@@ -1,11 +1,9 @@
 import dash
 from dash import Dash, html, dcc
-import dash_bootstrap_components as dbc
-from dash.dependencies import Input,Output,State
+from dash.dependencies import Input, Output, State, MATCH
 import dash_mantine_components as dmc
 from dash import _dash_renderer
 import functions
-import page_content
 
 from dash.exceptions import PreventUpdate
 import os
@@ -17,40 +15,6 @@ _dash_renderer._set_react_version("18.2.0")
 
 server = Flask(__name__)
 
-@dash.callback(
-    output = {
-        "redirect_trigger": Output({"type": "redirect", "index": "login"}, "pathname"),
-        "error_state": Output("error_message", "display"),
-    },
-    inputs = {
-        "input": {
-            "clickdata": Input("login_button", "n_clicks"),
-            "login": State("login_input", "value"),
-            "password": State("password_input", "value")
-        }
-    },
-    prevent_initial_call = True
-)
-def Login(input):
-    if not input["clickdata"]: raise PreventUpdate
-    successful_login = functions.CheckUserCredentials(input["login"], input["password"])
-
-    output = {}
-    if successful_login:
-        login_user(User(input["login"]))
-        url = "/projects"
-        if 'url' in session:
-            if session['url']:
-                url = session['url']
-                session['url'] = None
-
-        output["redirect_trigger"] = url
-        output["error_state"] = "none"
-    else:
-        output["redirect_trigger"] = "/login"
-        output["error_state"] = "block"
-        
-    return output
 
 
 app = dash.Dash(
@@ -91,6 +55,47 @@ app.layout = dmc.Box(
 )
 
 app.layout = dmc.MantineProvider(app.layout)
+
+@dash.callback(
+    output = {
+        "redirect_trigger": Output({"type": "redirect", "index": "login"}, "pathname"),
+        "error_state": Output("error_message", "display"),
+    },
+    inputs = {
+        "input": {
+            "clickdata": Input("login_button", "n_clicks"),
+            "login": State("login_input", "value"),
+            "password": State("password_input", "value")
+        }
+    },
+    prevent_initial_call = True
+)
+def Login(input):
+    if not input["clickdata"]: raise PreventUpdate
+    successful_login = functions.CheckUserCredentials(input["login"], input["password"])
+
+    output = {}
+    if successful_login:
+        login_user(User(input["login"]))
+        output["redirect_trigger"] = "/projects"
+        output["error_state"] = "none"
+    else:
+        output["redirect_trigger"] = "/login"
+        output["error_state"] = "block"
+        
+    return output
+
+@dash.callback(
+    Output({"type": "redirect", "index": MATCH}, "pathname", allow_duplicate = True),
+    Input({"type": "logout_button", "index": MATCH}, "n_clicks"),
+    prevent_initial_call = True
+)
+def Logout(clickdata):
+    if clickdata:
+        session.clear()
+        logout_user()
+        return "/login"
+
 
 
 if __name__ == '__main__':

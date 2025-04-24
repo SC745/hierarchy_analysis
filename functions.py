@@ -35,7 +35,7 @@ nodebox_props = {
 }
 
 
-#Построение иерархии
+#Построение иерархии ----------------------------------------------------------------------------------------------------
 
 #Получить элементы для отрисовки при инициализации
 def GetHierarchyPreset(nodes_df, edges_df):
@@ -119,8 +119,81 @@ def ColorElements(element_data):
         
         element["classes"] = "default"
 
+#Получить ширину текста в пикселях
+def GetTextWidth(font, line):
+    left, top, right, bottom = font.getbbox(line)
+    width = right - left
+    return width
 
-#Редактирование иерархии
+#Получить ширину и высоту элемента иерархии по его названию
+def GetNodebox(text):
+    global font_props
+    global nodebox_props
+
+    textbox_width = nodebox_props["width"] - nodebox_props["padding-x"] * 2
+    textbox_height = nodebox_props["height"] - nodebox_props["padding-y"] * 2
+
+    font = ImageFont.truetype(font_props["font-family"], font_props["font-size"])
+    
+    line = ""
+    height_counter = 0
+
+    words = text.split(" ")
+
+    for word in words:
+        line += " " + word
+        line = line.strip()
+
+        width = GetTextWidth(font, line)
+        if width > textbox_width:
+            if " " not in line: textbox_width = width
+            line = word
+            width = GetTextWidth(font, line)
+            if width > textbox_width: textbox_width = width
+            else: height_counter += font_props["font-height"]
+
+    if textbox_height < height_counter: textbox_height = height_counter
+
+    nodebox_width = nodebox_props["width"]
+    nodebox_height = nodebox_props["height"]
+
+    required_width = textbox_width + nodebox_props["padding-x"] * 2
+    required_height = textbox_height + nodebox_props["padding-y"] * 2
+      
+    if required_width > nodebox_props["width"]: nodebox_width = required_width
+    if required_height > nodebox_props["height"]: nodebox_height = required_height
+
+    return nodebox_width, nodebox_height
+
+#Информация об уровне иерархии
+def GetLevelInfo(nodes_df, level):
+    nodebox = {"level": level, "level_width": 0, "node_width": nodebox_props["width"], "node_height": nodebox_props["height"]}
+    
+    nodelevel_df = nodes_df.loc[nodes_df["level"] == level]
+    for index, row in nodelevel_df.iterrows():
+        width, height = GetNodebox(row["name"])
+        if nodebox["node_width"] < width: nodebox["node_width"] = width
+        if nodebox["node_height"] < height: nodebox["node_height"] = height
+
+    nodebox["level_width"] = (nodebox["node_width"] + 2 * nodebox_props["margin-x"]) * (len(nodelevel_df))
+    nodebox["level"] = level
+
+    return nodebox
+
+#Информация о иерархии
+def GetHierarchyInfo(nodes_df):
+    if len(nodes_df):
+        nodebox_list = []
+        for level in range(1, nodes_df["level"].max() + 1):
+            nodebox = GetLevelInfo(nodes_df, level)
+            nodebox_list.append(nodebox)
+        nodebox_df = pd.DataFrame(nodebox_list).sort_values(by="level")
+    else: nodebox_df = pd.DataFrame()
+
+    return nodebox_df
+
+
+#Редактирование иерархии ----------------------------------------------------------------------------------------------------
 
 #Удалить ребро
 def DeleteEdge(nodes_df, edges_df, edge_id, element_data):
@@ -304,7 +377,7 @@ def AddStep(element, element_data, action):
     element_data["steps"]["canceled"] = []
 
 
-#Служебные функции
+#Служебные функции ----------------------------------------------------------------------------------------------------
 
 #Создает датафреймы вершин и ребер на основе словаря элементов
 def ElementsToDfs(elements):
@@ -353,7 +426,16 @@ def GetEdge(source_id, target_id, elements):
             if element["data"]["source"] == source_id and element["data"]["target"] == target_id:
                 return element
 
-#Запросы и их обработка
+#Получить сокращенное имя пользователя
+def GetShortUsername(username):
+    name_chunks = username.split(' ')
+    shortname = name_chunks[0]
+    for chunk in name_chunks:
+        if chunk != shortname: shortname += ' ' + chunk[0] + '.'
+    return shortname
+
+
+#Запросы и их обработка ----------------------------------------------------------------------------------------------------
 
 #Получить датафрейм вершин из базы
 def GetNodes(project_id):
@@ -559,7 +641,7 @@ def GetUserProjectById(user_id, project_id):
     return project_data
 
 
-#Формирование элементов страницы
+#Формирование элементов страницы ----------------------------------------------------------------------------------------------------
 
 #Определение состава, состояния, возможности изменения чекбоксов элементов нижнего уровня и вершины
 def GetToolbarCheckboxes(source_node, element_data):
@@ -596,78 +678,5 @@ def GetToolbarCheckboxes(source_node, element_data):
     return node_checkbox, edge_checkboxes
 
 
-#Определение размеров и позиций вершин
 
-#Получить ширину текста в пикселях
-def GetTextWidth(font, line):
-    left, top, right, bottom = font.getbbox(line)
-    width = right - left
-    return width
-
-#Получить ширину и высоту элемента иерархии по его названию
-def GetNodebox(text):
-    global font_props
-    global nodebox_props
-
-    textbox_width = nodebox_props["width"] - nodebox_props["padding-x"] * 2
-    textbox_height = nodebox_props["height"] - nodebox_props["padding-y"] * 2
-
-    font = ImageFont.truetype(font_props["font-family"], font_props["font-size"])
-    
-    line = ""
-    height_counter = 0
-
-    words = text.split(" ")
-
-    for word in words:
-        line += " " + word
-        line = line.strip()
-
-        width = GetTextWidth(font, line)
-        if width > textbox_width:
-            if " " not in line: textbox_width = width
-            line = word
-            width = GetTextWidth(font, line)
-            if width > textbox_width: textbox_width = width
-            else: height_counter += font_props["font-height"]
-
-    if textbox_height < height_counter: textbox_height = height_counter
-
-    nodebox_width = nodebox_props["width"]
-    nodebox_height = nodebox_props["height"]
-
-    required_width = textbox_width + nodebox_props["padding-x"] * 2
-    required_height = textbox_height + nodebox_props["padding-y"] * 2
-      
-    if required_width > nodebox_props["width"]: nodebox_width = required_width
-    if required_height > nodebox_props["height"]: nodebox_height = required_height
-
-    return nodebox_width, nodebox_height
-
-#Информация об уровне иерархии
-def GetLevelInfo(nodes_df, level):
-    nodebox = {"level": level, "level_width": 0, "node_width": nodebox_props["width"], "node_height": nodebox_props["height"]}
-    
-    nodelevel_df = nodes_df.loc[nodes_df["level"] == level]
-    for index, row in nodelevel_df.iterrows():
-        width, height = GetNodebox(row["name"])
-        if nodebox["node_width"] < width: nodebox["node_width"] = width
-        if nodebox["node_height"] < height: nodebox["node_height"] = height
-
-    nodebox["level_width"] = (nodebox["node_width"] + 2 * nodebox_props["margin-x"]) * (len(nodelevel_df))
-    nodebox["level"] = level
-
-    return nodebox
-
-#Информация о иерархии
-def GetHierarchyInfo(nodes_df):
-    if len(nodes_df):
-        nodebox_list = []
-        for level in range(1, nodes_df["level"].max() + 1):
-            nodebox = GetLevelInfo(nodes_df, level)
-            nodebox_list.append(nodebox)
-        nodebox_df = pd.DataFrame(nodebox_list).sort_values(by="level")
-    else: nodebox_df = pd.DataFrame()
-
-    return nodebox_df
 
