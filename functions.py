@@ -100,7 +100,7 @@ def RefreshNodePositionsSizes(elements):
 
 #Покрасить элементы
 def ColorElements(element_data):
-    for element in element_data["list"]:
+    for element in element_data["elements"]:
         if element_data["state"]["selected"] and element_data["state"]["selected"]["data"]["id"] == element["data"]["id"]: 
             element["classes"] = "selected"
             continue
@@ -197,7 +197,7 @@ def GetHierarchyInfo(nodes_df):
 
 #Удалить ребро
 def DeleteEdge(nodes_df, edges_df, edge_id, element_data):
-    root_edge = GetElementById(edge_id, element_data["list"])
+    root_edge = GetElementById(edge_id, element_data["elements"])
     if root_edge["data"]["id"] not in element_data["state"]["manually_deleted"].keys():
         element_data["state"]["cascade_deleted"][root_edge["data"]["id"]] = root_edge
 
@@ -207,11 +207,11 @@ def DeleteEdge(nodes_df, edges_df, edge_id, element_data):
         if len(incoming_edges) > 0: return
         else:
             added_edges = edges_df.loc[(edges_df["target"] == root_edge["data"]["target"]) & (edges_df["id"].isin(element_data["state"]["added"].keys()))]
-            for index, row in added_edges.iterrows(): element_data["state"]["cascade_deleted"][row["id"]] = GetElementById(row["id"], element_data["list"])
+            for index, row in added_edges.iterrows(): element_data["state"]["cascade_deleted"][row["id"]] = GetElementById(row["id"], element_data["elements"])
 
     if len(incoming_edges) > 0: return
 
-    current_node = GetElementById(root_edge["data"]["target"], element_data["list"])
+    current_node = GetElementById(root_edge["data"]["target"], element_data["elements"])
     if current_node["data"]["id"] not in element_data["state"]["manually_deleted"].keys():
         element_data["state"]["cascade_deleted"][current_node["data"]["id"]] = current_node
 
@@ -221,17 +221,17 @@ def DeleteEdge(nodes_df, edges_df, edge_id, element_data):
 
 #Удалить элемент
 def DeleteElement(deleted_element, element_data):
-    if deleted_element not in element_data["list"]: deleted_element = GetEdge(deleted_element["data"]["source"], deleted_element["data"]["target"], element_data["list"])
+    if deleted_element not in element_data["elements"]: deleted_element = GetEdge(deleted_element["data"]["source"], deleted_element["data"]["target"], element_data["elements"])
 
     element_data["state"]["manually_deleted"][deleted_element["data"]["id"]] = deleted_element
-    nodes_df, edges_df = ElementsToDfs(element_data["list"])
+    nodes_df, edges_df = ElementsToDfs(element_data["elements"])
 
     if "source" in deleted_element["data"]:
         DeleteEdge(nodes_df, edges_df, deleted_element["data"]["id"], element_data)
     else:
         incoming_edges = edges_df.loc[(edges_df["target"] == deleted_element["data"]["id"]) & ~(edges_df["id"].isin(list(element_data["state"]["manually_deleted"].keys()) + list(element_data["state"]["cascade_deleted"].keys())))]
         for index, row in incoming_edges.iterrows():
-            element_data["state"]["cascade_deleted"][row["id"]] = GetElementById(row["id"], element_data["list"])
+            element_data["state"]["cascade_deleted"][row["id"]] = GetElementById(row["id"], element_data["elements"])
 
         outcoming_edges = edges_df.loc[(edges_df["source"] == deleted_element["data"]["id"]) & ~(edges_df["id"].isin(list(element_data["state"]["manually_deleted"].keys()) + list(element_data["state"]["cascade_deleted"].keys())))]
         for index, row in outcoming_edges.iterrows():
@@ -239,7 +239,7 @@ def DeleteElement(deleted_element, element_data):
 
 #Отменить удаление ребра
 def CancelDeleteEdge(nodes_df, edges_df, edge_id, element_data):
-    root_edge = GetElementById(edge_id, element_data["list"])
+    root_edge = GetElementById(edge_id, element_data["elements"])
 
     if root_edge["data"]["target"] not in element_data["state"]["manually_deleted"].keys():
 
@@ -256,11 +256,11 @@ def CancelDeleteEdge(nodes_df, edges_df, edge_id, element_data):
 
 #Отменить удаление элемента
 def CancelDeleteElement(deleted_element, element_data):
-    if deleted_element not in element_data["list"]: deleted_element = GetEdge(deleted_element["data"]["source"], deleted_element["data"]["target"], element_data["list"])
+    if deleted_element not in element_data["elements"]: deleted_element = GetEdge(deleted_element["data"]["source"], deleted_element["data"]["target"], element_data["elements"])
 
     if deleted_element["data"]["id"] in element_data["state"]["manually_deleted"].keys(): del element_data["state"]["manually_deleted"][deleted_element["data"]["id"]]
     element_data["state"]["cascade_deleted"][deleted_element["data"]["id"]] = deleted_element
-    nodes_df, edges_df = ElementsToDfs(element_data["list"])
+    nodes_df, edges_df = ElementsToDfs(element_data["elements"])
 
     if "source" in deleted_element["data"]:
         CancelDeleteEdge(nodes_df, edges_df, deleted_element["data"]["id"], element_data)
@@ -279,7 +279,7 @@ def CancelDeleteElement(deleted_element, element_data):
 
 #Добавить новое ребро
 def AddEdge(edge_object, element_data):
-    element_data["list"].append(edge_object)
+    element_data["elements"].append(edge_object)
     element_data["state"]["added"][edge_object["data"]["id"]] = edge_object
 
     deleted_ids = list(element_data["state"]["manually_deleted"].keys()) + list(element_data["state"]["cascade_deleted"].keys())
@@ -290,9 +290,9 @@ def AddElement(element, element_data):
     if "source" in element["data"]:
         AddEdge(element, element_data)
     else:
-        nodes_df, edges_df = ElementsToDfs(element_data["list"])
+        nodes_df, edges_df = ElementsToDfs(element_data["elements"])
 
-        element_data["list"].append(element)
+        element_data["elements"].append(element)
         element_data["state"]["added"][element["data"]["id"]] = element
 
         deleted = True
@@ -314,21 +314,21 @@ def CancelAddElement(added_element, element_data):
     if added_element["data"]["id"] in element_data["state"]["cascade_deleted"].keys(): del element_data["state"]["cascade_deleted"][added_element["data"]["id"]]
 
     if "source" not in added_element["data"]:
-        nodes_df, edges_df = ElementsToDfs(element_data["list"])
+        nodes_df, edges_df = ElementsToDfs(element_data["elements"])
         node_edges = edges_df.loc[(edges_df["source"] == added_element["data"]["id"]) | (edges_df["target"] == added_element["data"]["id"])]
         for index, row in node_edges.iterrows():
             del element_data["state"]["added"][row["id"]]
             if row["id"] in element_data["state"]["manually_deleted"].keys(): del element_data["state"]["manually_deleted"][row["id"]]
             if row["id"] in element_data["state"]["cascade_deleted"].keys(): del element_data["state"]["cascade_deleted"][row["id"]]
-            element_data["list"].remove(GetElementById(row["id"], element_data["list"]))
+            element_data["elements"].remove(GetElementById(row["id"], element_data["elements"]))
 
-    element_data["list"].remove(added_element)
-    if element_data["state"]["selected"] not in element_data["list"]: element_data["state"]["selected"] = None
+    element_data["elements"].remove(added_element)
+    if element_data["state"]["selected"] not in element_data["elements"]: element_data["state"]["selected"] = None
 
 #Отменить выбор элемента
 def DeselectElement(element_data):
     if element_data["state"]["selected"]:
-        selected_element = GetElementById(element_data["state"]["selected"]["data"]["id"], element_data["list"])
+        selected_element = GetElementById(element_data["state"]["selected"]["data"]["id"], element_data["elements"])
         if selected_element["data"]["id"] in element_data["state"]["manually_deleted"].keys(): selected_element["classes"] = "manually_deleted"
         elif selected_element["data"]["id"] in element_data["state"]["cascade_deleted"].keys(): selected_element["classes"] = "cascade_deleted"
         else: selected_element["classes"] = "default"
@@ -527,7 +527,7 @@ def GetNodeLevels(nodes_df, edges_df):
 
 #Записать граф в базу
 def SaveGraphToDB(project_id, element_data):
-    nodes_df, edges_df = ElementsToDfs(element_data["list"])
+    nodes_df, edges_df = ElementsToDfs(element_data["elements"])
     nodes_df.drop(["width", "height", "level", "classes"], axis=1, inplace = True)
     edges_df.drop(["deleted", "classes"], axis=1, inplace = True)
 
@@ -539,7 +539,7 @@ def SaveGraphToDB(project_id, element_data):
     DeselectElement(element_data)
 
     deleted_elements = []
-    for element in element_data["list"]:
+    for element in element_data["elements"]:
         if element["classes"] not in ["default", "added"]:
             if "source" in element["data"]: edges_df.drop(edges_df.loc[edges_df["id"] == element["data"]["id"]].index, inplace = True)
             else: nodes_df.drop(nodes_df.loc[nodes_df["id"] == element["data"]["id"]].index, inplace = True)
@@ -573,7 +573,7 @@ def SaveGraphToDB(project_id, element_data):
         element_data["steps"]["history"] = []
         element_data["steps"]["canceled"] = []
 
-        for element in deleted_elements: element_data["list"].remove(element)
+        for element in deleted_elements: element_data["elements"].remove(element)
     except: return False
     
     return True
@@ -643,39 +643,7 @@ def GetUserProjectById(user_id, project_id):
 
 #Формирование элементов страницы ----------------------------------------------------------------------------------------------------
 
-#Определение состава, состояния, возможности изменения чекбоксов элементов нижнего уровня и вершины
-def GetToolbarCheckboxes(source_node, element_data):
-    element_data["state"]
-    nodes_df, edges_df = ElementsToDfs(element_data["list"])
 
-    lowerlevel_df = nodes_df.loc[nodes_df["level"] == source_node["data"]["level"] + 1]
-    accessable_nodes = list(edges_df.loc[(edges_df["source"] == source_node["data"]["id"]) & ~(edges_df["id"].isin(list(element_data["state"]["manually_deleted"].keys()) + list(element_data["state"]["cascade_deleted"].keys())))]["target"])
-    cascade_accessable_nodes = list(edges_df.loc[(edges_df["source"] == source_node["data"]["id"]) & (edges_df["id"].isin(list(element_data["state"]["cascade_deleted"].keys())))]["target"])
-
-    edge_checkboxes = []
-    for index, row in lowerlevel_df.iterrows():
-        edge_checkbox = dmc.Checkbox(py = "xs", pl = "xs")
-
-        edge_checkbox.id = {"type": "edge_checkbox", "index": row["id"]}
-        edge_checkbox.label = row["name"]
-        edge_checkbox.checked = row["id"] in accessable_nodes
-        edge_checkbox.disabled = row["id"] in cascade_accessable_nodes
-        if "target" in element_data["state"]["selected"]["data"] and element_data["state"]["selected"]["data"]["target"] == row["id"]: edge_checkbox.style = {"background-color": "#e8f3fc"}
-
-        edge_checkboxes.append(edge_checkbox)
-
-    node_checkbox = dmc.Checkbox(id = "node_checkbox", size = 36)
-    if source_node["data"]["id"] in element_data["state"]["cascade_deleted"].keys():
-        node_checkbox.checked = False
-        node_checkbox.disabled = True
-    elif source_node["data"]["id"] in element_data["state"]["manually_deleted"].keys():
-        node_checkbox.checked = False
-        node_checkbox.disabled = False
-    else:
-        node_checkbox.checked = True
-        node_checkbox.disabled = False
-
-    return node_checkbox, edge_checkboxes
 
 
 

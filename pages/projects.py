@@ -51,7 +51,7 @@ def layout():
                                     )
                                 ],
                                 px = "md",
-                                style = {"display":"flex", "justify-content":"space-between"}
+                                style = {"display":"flex", "justify-content":"end"}
                             )
                         ]
                 ),
@@ -97,16 +97,14 @@ def ProjectChoice(clickdata):
     steps["canceled"] = []
 
     element_data = {}
-    element_data["list"] = elements
+    element_data["elements"] = elements
     element_data["state"] = state
     element_data["steps"] = steps
 
     session["project_data"] = json.dumps(project_data, cls = functions.NpEncoder)
     session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
 
-    project_path = "/projects/" + str(project_data["id"])
-    dash.register_page("project", path = project_path, layout = pages.project.layout())
 
-    return project_path
+    return "/project"
 
 

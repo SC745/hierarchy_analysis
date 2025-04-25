@@ -2,6 +2,7 @@ import dash
 import dash_mantine_components as dmc
 from dash import Input, Output, State, _dash_renderer, ctx, ALL, dcc
 from dash_iconify import DashIconify
+from dash.exceptions import PreventUpdate
 
 from flask import session
 from flask_login import current_user
@@ -14,6 +15,45 @@ import dash_cytoscape as cyto
 
 _dash_renderer._set_react_version("18.2.0")
 dash.register_page(__name__)
+
+def GetNodeInfo(node, element_data):
+    if node["data"]["id"] in element_data["state"]["cascade_deleted"].keys():
+        checked_state = False
+        disabled_state = True
+    elif node["data"]["id"] in element_data["state"]["manually_deleted"].keys():
+        checked_state = False
+        disabled_state = False
+    else:
+        checked_state = True
+        disabled_state = False
+
+    node_info = []
+    node_info.append(dmc.TextInput(id = "name_input", value = node["data"]["name"]))
+    node_info.append(dmc.Checkbox(id = "node_checkbox", size = 36, checked = checked_state, disabled = disabled_state))
+
+    return node_info
+
+def GetEdgeCheckboxes(source_node, element_data):
+    element_data["state"]
+    nodes_df, edges_df = functions.ElementsToDfs(element_data["elements"])
+
+    lowerlevel_df = nodes_df.loc[nodes_df["level"] == source_node["data"]["level"] + 1]
+    accessable_nodes = list(edges_df.loc[(edges_df["source"] == source_node["data"]["id"]) & ~(edges_df["id"].isin(list(element_data["state"]["manually_deleted"].keys()) + list(element_data["state"]["cascade_deleted"].keys())))]["target"])
+    cascade_accessable_nodes = list(edges_df.loc[(edges_df["source"] == source_node["data"]["id"]) & (edges_df["id"].isin(list(element_data["state"]["cascade_deleted"].keys())))]["target"])
+
+    edge_checkboxes = []
+    for index, row in lowerlevel_df.iterrows():
+        edge_checkbox = dmc.Checkbox(py = "xs", pl = "xs")
+
+        edge_checkbox.id = {"type": "edge_checkbox", "index": row["id"]}
+        edge_checkbox.label = row["name"]
+        edge_checkbox.checked = row["id"] in accessable_nodes
+        edge_checkbox.disabled = row["id"] in cascade_accessable_nodes
+        if "target" in element_data["state"]["selected"]["data"] and element_data["state"]["selected"]["data"]["target"] == row["id"]: edge_checkbox.style = {"background-color": "#e8f3fc"}
+
+        edge_checkboxes.append(edge_checkbox)
+
+    return edge_checkboxes
 
 def layout():
     if not current_user.is_authenticated:
@@ -29,12 +69,15 @@ def layout():
                         dmc.Box(
                             children = [
                                 dcc.Location(id = {"type": "redirect", "index": "project"}, pathname = "/project"),
+                                dcc.Store(id = {"type": "init_store", "index": "project"}, storage_type = "memory"),
+                                dcc.Store(id = "prev_action", storage_type = "memory", data = False),
                                 dmc.Menu(
                                     children = [
                                         dmc.MenuTarget(dmc.Text("Проект")),
                                         dmc.MenuDropdown(
                                             children = [
                                                 dmc.MenuItem(id = "project_settings", leftSection = DashIconify(icon = "mingcute:settings-3-line"), children = "Настройки"),
+                                                dmc.MenuItem(id = "restore_initial_hierarchy", leftSection = DashIconify(icon = "mingcute:refresh-3-fill"), children = "Восстановить исходную иерархию", disabled = True),
                                                 dmc.MenuDivider(),
                                                 dmc.MenuItem(id = "project_list", leftSection = DashIconify(icon = "mingcute:list-check-fill"), children = "Список проектов")
                                             ]
@@ -67,11 +110,11 @@ def layout():
                             children = [
                                 dmc.Group(
                                     children = [
-                                        dmc.ActionIcon(id = {"type": "action_button", "index": "rollback"}, children = DashIconify(icon = "mingcute:corner-down-left-fill", width=20), size = "input-sm", variant = "default", disabled = True),
-                                        dmc.ActionIcon(id = {"type": "action_button", "index": "cancelrollback"}, children = DashIconify(icon = "mingcute:corner-down-right-fill", width=20), size = "input-sm", variant = "default", disabled = True),
-                                        dmc.ActionIcon(id = {"type": "action_button", "index": "locate"}, children = DashIconify(icon = "mingcute:location-line", width=20), size = "input-sm", variant = "default"),
-                                        dmc.ActionIcon(id = {"type": "action_button", "index": "add"}, children = DashIconify(icon = "mingcute:cross-line", width=20), size = "input-sm", variant = "light", color = "green"),
-                                        dmc.ActionIcon(id = {"type": "action_button", "index": "save"}, children = DashIconify(icon = "mingcute:save-2-line", width=20), size = "input-sm", variant = "light"),
+                                        dmc.ActionIcon(id = {"type": "step_button", "index": "rollback"}, children = DashIconify(icon = "mingcute:corner-down-left-fill", width=20), size = "input-sm", variant = "default", disabled = True),
+                                        dmc.ActionIcon(id = {"type": "step_button", "index": "cancelrollback"}, children = DashIconify(icon = "mingcute:corner-down-right-fill", width=20), size = "input-sm", variant = "default", disabled = True),
+                                        dmc.ActionIcon(id = "locate", children = DashIconify(icon = "mingcute:location-line", width=20), size = "input-sm", variant = "default"),
+                                        dmc.ActionIcon(id = "add_node", children = DashIconify(icon = "mingcute:cross-line", width=20), size = "input-sm", variant = "light", color = "green"),
+                                        dmc.ActionIcon(id = "save_graph", children = DashIconify(icon = "mingcute:save-2-line", width=20), size = "input-sm", variant = "light"),
                                     ],
                                     grow=True,
                                     preventGrowOverflow=False,
@@ -88,7 +131,8 @@ def layout():
                                         ta = "center",
                                         pt = "md"
                                     ),
-                                    style = {"display": "block"}
+                                    id = "toolbar_placeholder",
+                                    display = "block"
                                 ),
                                 dmc.Box(
                                     children = [
@@ -105,6 +149,7 @@ def layout():
                                                             justify = "space-around",
                                                             grow=True,
                                                             preventGrowOverflow=False,
+                                                            id = "node_info"
                                                         ),
                                                     ],
                                                     p = "md",
@@ -115,7 +160,7 @@ def layout():
                                                         dmc.AccordionItem(
                                                             children = [
                                                                 dmc.AccordionControl("Элементы нижнего уровня"),
-                                                                dmc.AccordionPanel(dmc.Stack(id = "edge_checkboxstack", children = [], gap = 0))
+                                                                dmc.AccordionPanel(dmc.Stack(id = "edge_checkboxes", children = [], gap = 0))
                                                             ],
                                                             value = "elements"
                                                         ),
@@ -124,12 +169,12 @@ def layout():
                                                 )
                                             ],
                                         ),
+                                        dcc.Store(id = "current_node_id", storage_type = "memory", data = None)
                                     ],
-                                    style = {"display": "none"},
-                                    id = {"type": "node_toolbar", "index": "default"}
+                                    display = "none",
+                                    id = "toolbar",
                                 ),
-                            ],
-                            id = "toolbar_data"
+                            ]
                         )
                     ]
                 ),
@@ -212,48 +257,54 @@ def layout():
         layout = dmc.MantineProvider(layout)
         return layout
 
+
 @dash.callback(
-    output = {
-        "toolbar": Output("toolbar_data", "children"),
-        "elements": Output("graph", "elements"),
-        "button_state": {
-            "rollback": Output({"type": "action_button", "index": "rollback"}, "disabled"),
-            "cancelrollback": Output({"type": "action_button", "index": "cancelrollback"}, "disabled"),
-            "add": Output({"type": "action_button", "index": "add"}, "disabled"),
-        }
-    },
-    inputs = {
-        "input": {
-            "button_clickdata": Input({"type": "action_button", "index": ALL}, "n_clicks"),
-            "node_checkbox": Input("node_checkbox", "checked"),
-            "edge_checkboxes": Input({"type": "edge_checkbox", "index": ALL}, "checked"),
-            "name_input": Input("name_input", "value"),
-            "tapNodeData": Input("graph", "tapNodeData"),
-            "tapEdgeData": Input("graph", "tapEdgeData"),
-            "toolbar": State("toolbar_data", "children")
-        },
-    }
+    Output("current_node_id", "data", allow_duplicate = True),
+    Output("node_info", "children"),
+    Output("edge_checkboxes", "children"),
+    Output("graph", "elements", allow_duplicate = True),
+    Output("prev_action", "data", allow_duplicate = True),
+    Input("graph", "tapNodeData"),
+    Input("graph", "tapEdgeData"),
+    prevent_initial_call = True
 )
-def ShowNodeToolbar(input):
+def SelectElement(tapNodeData, tapEdgeData):
     trigger = {"id": ctx.triggered_id, "property": ctx.triggered[0]["prop_id"].split(".")[1], "value": ctx.triggered[0]["value"]}
 
-    project_data = json.loads(session["project_data"])
     element_data = json.loads(session["element_data"])
-    
-    current_node = functions.GetElementById(input["toolbar"][1]["props"]["id"]["index"], element_data["list"])
 
-    #Нажатия на элементы графа
-    if trigger["property"] in ["tapNodeData", "tapEdgeData"]:
-        if trigger["property"] == "tapNodeData":
-            current_node = functions.GetElementById(input["tapNodeData"]["id"], element_data["list"])
-            element_data["state"]["selected"] = current_node
-        else:
-            current_node = functions.GetElementById(input["tapEdgeData"]["source"], element_data["list"])
-            element_data["state"]["selected"] = functions.GetElementById(input["tapEdgeData"]["id"], element_data["list"])
+    if trigger["property"] == "tapNodeData":
+        current_node = functions.GetElementById(tapNodeData["id"], element_data["elements"])
+        element_data["state"]["selected"] = current_node
+    else:
+        current_node = functions.GetElementById(tapEdgeData["source"], element_data["elements"])
+        element_data["state"]["selected"] = functions.GetElementById(tapEdgeData["id"], element_data["elements"])
 
-    #Нажатие на чекбоксы для удаления/добавления элементов графа
-    if trigger["property"] == "checked":
-        if trigger["id"] != "node_checkbox": element = functions.GetEdge(current_node["data"]["id"], trigger["id"]["index"], element_data["list"])
+    node_info = GetNodeInfo(current_node, element_data)
+    edge_checkboxes = GetEdgeCheckboxes(current_node, element_data)
+
+    functions.ColorElements(element_data)
+    session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
+
+    return current_node["data"]["id"], node_info, edge_checkboxes, element_data["elements"], False
+
+
+@dash.callback(
+    Output("graph", "elements", allow_duplicate = True),
+    Output("prev_action", "data", allow_duplicate = True),
+    Input("node_checkbox", "checked"),
+    Input({"type": "edge_checkbox", "index": ALL}, "checked"),
+    State("current_node_id", "data"),
+    State("prev_action", "data"),
+    prevent_initial_call = True
+)
+def CheckboxClick(node_checked, edge_checked, current_node_id, prev_action):
+    trigger = {"id": ctx.triggered_id, "property": ctx.triggered[0]["prop_id"].split(".")[1], "value": ctx.triggered[0]["value"]}
+    element_data = json.loads(session["element_data"])
+
+    if prev_action:
+        current_node = functions.GetElementById(current_node_id, element_data["elements"])
+        if trigger["id"] != "node_checkbox": element = functions.GetEdge(current_node["data"]["id"], trigger["id"]["index"], element_data["elements"])
         else: element = current_node
 
         if element:
@@ -265,94 +316,178 @@ def ShowNodeToolbar(input):
                 functions.AddStep(element, element_data, "delete")
         else:
             edge_object = functions.CreateEdgeObject(current_node["data"]["id"], trigger["id"]["index"])
-            functions.AddElement(edge_object, element_data["list"])
+            functions.AddElement(edge_object, element_data["elements"])
             functions.AddStep(edge_object, element_data, "add")
 
-    if trigger["property"] == "n_clicks":
-        if trigger["id"]["index"] == "add":
-            node_object = functions.CreateNodeObject(current_node)
-            functions.AddElement(node_object, element_data)
-            functions.AddStep(node_object, element_data, "add")
-            current_node = node_object
-            element_data["state"]["selected"] = current_node
+        functions.ColorElements(element_data)
+        session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
 
-        if trigger["id"]["index"] == "save":
-            functions.SaveGraphToDB(project_data["id"], element_data)
+    return element_data["elements"], True
 
-        if trigger["id"]["index"] in ["rollback", "cancelrollback"]:
-            if trigger["id"]["index"] == "rollback": 
-                used_list = "history"
-                store_list = "canceled"
-            else: 
-                used_list = "canceled"
-                store_list = "history"
 
-            if len(element_data["steps"][used_list]) > 0:
-                action = element_data["steps"][used_list][len(element_data["steps"][used_list]) - 1]["action"]
-                element = element_data["steps"][used_list][len(element_data["steps"][used_list]) - 1]["element"]
+@dash.callback(
+    Output("graph", "elements", allow_duplicate = True),
+    Output("prev_action", "data", allow_duplicate = True),
+    Input("name_input", "value"),
+    State("current_node_id", "data"),
+    State("prev_action", "data"),
+    prevent_initial_call = True
+)
+def ChangeNodeName(new_name, current_node_id, prev_action):
+    element_data = json.loads(session["element_data"])
 
-                if action == "delete":
-                    element_data["steps"][used_list][len(element_data["steps"][used_list]) - 1]["action"] = "canceldelete"
-                    functions.CancelDeleteElement(element, element_data)
-                if action == "canceldelete":
-                    element_data["steps"][used_list][len(element_data["steps"][used_list]) - 1]["action"] = "delete"
-                    functions.DeleteElement(element, element_data)
-                if action == "add":
-                    element_data["steps"][used_list][len(element_data["steps"][used_list]) - 1]["action"] = "canceladd"
-                    functions.CancelAddElement(element, element_data)
-                if action == "canceladd":
-                    element_data["steps"][used_list][len(element_data["steps"][used_list]) - 1]["action"] = "add"
-                    functions.AddElement(element, element_data)
+    if prev_action:
+        current_node = functions.GetElementById(current_node_id, element_data["elements"])
 
-                element_data["steps"][store_list].append(element_data["steps"][used_list].pop())
-            
-    #Изменение названия вершины
-    if trigger["id"] == "name_input": 
-        strlen = len(trigger["value"])
+        strlen = len(new_name)
         if strlen > 100: strlen = 100
-        if element_data["state"]["selected"] == current_node: element_data["state"]["selected"]["data"]["name"] = trigger["value"][:strlen]
-        current_node["data"]["name"] = trigger["value"][:strlen]
+        current_node["data"]["name"] = new_name[:strlen]
 
-    #Заполнение
-    if element_data["state"]["selected"]:
-        input["toolbar"][0]["props"]["style"]["display"] = "none"
-        input["toolbar"][1]["props"]["style"]["display"] = "block"
+        functions.RefreshNodePositionsSizes(element_data["elements"])
+        session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
 
-        #Индекс вершины
-        input["toolbar"][1]["props"]["id"]["index"] = current_node["data"]["id"]
+    return element_data["elements"], True
 
-        #Имя вершины в поле ввода
-        input["toolbar"][1]["props"]["children"][0]["props"]["children"][0]["props"]["children"][1]["props"]["children"][0]["props"]["value"] = current_node["data"]["name"]
 
-        #Чекбоксы ребер и вершины
-        node_checkbox, edge_checkboxes = functions.GetToolbarCheckboxes(current_node, element_data)
-        input["toolbar"][1]["props"]["children"][0]["props"]["children"][1]["props"]["children"][0]["props"]["children"][1]["props"]["children"] = edge_checkboxes
-        input["toolbar"][1]["props"]["children"][0]["props"]["children"][0]["props"]["children"][1]["props"]["children"][1] = node_checkbox
+@dash.callback(
+    Output("graph", "elements", allow_duplicate = True),
+    Output("prev_action", "data", allow_duplicate = True),
+    Input({"type": "step_button", "index": ALL}, "n_clicks"),
+    prevent_initial_call = True
+)
+def StepButtons(clickdata):
+    element_data = json.loads(session["element_data"])
 
-    else:
-        input["toolbar"][0]["props"]["style"]["display"] = "block"
-        input["toolbar"][1]["props"]["style"]["display"] = "none"
+    if ctx.triggered_id["index"] == "rollback": 
+        used_list = "history"
+        store_list = "canceled"
+    else: 
+        used_list = "canceled"
+        store_list = "history"
 
-        #Индекс вершины
-        input["toolbar"][1]["props"]["id"]["index"] = ""
+    if len(element_data["steps"][used_list]) > 0:
+        action = element_data["steps"][used_list][len(element_data["steps"][used_list]) - 1]["action"]
+        element = functions.GetElementById(element_data["steps"][used_list][len(element_data["steps"][used_list]) - 1]["element"]["data"]["id"], element_data["elements"])
+        if not element: element = element_data["steps"][used_list][len(element_data["steps"][used_list]) - 1]["element"]
 
-    button_state = {}
-    button_state["rollback"] = not bool(len(element_data["steps"]["history"]))
-    button_state["cancelrollback"] = not bool(len(element_data["steps"]["canceled"]))
-    button_state["add"] = not (bool(element_data["state"]["selected"]) or not bool(len(element_data["list"])))
+        if action == "delete":
+            element_data["steps"][used_list][len(element_data["steps"][used_list]) - 1]["action"] = "canceldelete"
+            functions.CancelDeleteElement(element, element_data)
+        if action == "canceldelete":
+            element_data["steps"][used_list][len(element_data["steps"][used_list]) - 1]["action"] = "delete"
+            functions.DeleteElement(element, element_data)
+        if action == "add":
+            element_data["steps"][used_list][len(element_data["steps"][used_list]) - 1]["action"] = "canceladd"
+            functions.CancelAddElement(element, element_data)
+        if action == "canceladd":
+            element_data["steps"][used_list][len(element_data["steps"][used_list]) - 1]["action"] = "add"
+            functions.AddElement(element, element_data)
 
-    output = {}
-    output["elements"] = element_data["list"]
-    output["toolbar"] = input["toolbar"]
-    output["button_state"] = button_state
+        element_data["steps"][store_list].append(element_data["steps"][used_list].pop())
 
     functions.ColorElements(element_data)
-    functions.RefreshNodePositionsSizes(element_data["list"])
-
+    functions.RefreshNodePositionsSizes(element_data["elements"])
     session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
+
+    return element_data["elements"], True
+
+
+@dash.callback(
+    Output("graph", "elements", allow_duplicate = True),
+    Output("current_node_id", "data", allow_duplicate = True),
+    Output("prev_action", "data", allow_duplicate = True),
+    Input("add_node", "n_clicks"),
+    State("current_node_id", "data"),
+    prevent_initial_call = True
+)
+def AddNewNode(clickdata, current_node_id):
+    element_data = json.loads(session["element_data"])
+
+    node_object = functions.CreateNodeObject(functions.GetElementById(current_node_id, element_data["elements"]))
+    functions.AddElement(node_object, element_data)
+    functions.AddStep(node_object, element_data, "add")
+    element_data["state"]["selected"] = node_object
+
+    functions.ColorElements(element_data)
+    functions.RefreshNodePositionsSizes(element_data["elements"])
+    session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
+
+    return element_data["elements"], node_object["data"]["id"], True
+
+
+@dash.callback(
+    Output("graph", "elements", allow_duplicate = True),
+    Output("prev_action", "data", allow_duplicate = True),
+    Input("save_graph", "n_clicks"),
+    prevent_initial_call = True
+)
+def SaveGraph(clickdata):
+    element_data = json.loads(session["element_data"])
+    project_data = json.loads(session["project_data"])
+
+    functions.SaveGraphToDB(project_data["id"], element_data)
+
+    functions.ColorElements(element_data)
+    functions.RefreshNodePositionsSizes(element_data["elements"])
+    session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
+
+    return element_data["elements"], True
+
+
+@dash.callback(
+    output = {
+        "placeholder_display": Output("toolbar_placeholder", "display"),
+        "toolbar_display": Output("toolbar", "display"),
+        "current_node_id": Output("current_node_id", "data", allow_duplicate = True),
+        "rollback_disabled": Output({"type": "step_button", "index": "rollback"}, "disabled"),
+        "cancelrollback_disabled": Output({"type": "step_button", "index": "cancelrollback"}, "disabled"),
+        "addnode_disabled": Output("add_node", "disabled"),
+    },
+    inputs = {
+        "input": {
+            "elements": Input("graph", "elements"),
+            "current_node_id": State("current_node_id", "data"),
+        }
+    },
+    prevent_initial_call = True
+)
+def ElementChangeProcessing(input):
+    current_node = functions.GetElementById(input["current_node_id"], input["elements"])
+
+    element_data = json.loads(session["element_data"])
+
+    output = {}
+    output["rollback_disabled"] = not bool(len(element_data["steps"]["history"]))
+    output["cancelrollback_disabled"] = not bool(len(element_data["steps"]["canceled"]))
+    output["addnode_disabled"] = not (bool(element_data["state"]["selected"]) or not bool(len(element_data["elements"])))
+
+    if current_node: 
+        output["placeholder_display"] = "none"
+        output["toolbar_display"] = "block"
+        output["current_node_id"] = input["current_node_id"]
+    else:
+        output["placeholder_display"] = "block"
+        output["toolbar_display"] = "none"
+        output["current_node_id"] = None
 
     return output
 
-        
+
+@dash.callback(
+    Output("graph", "elements"),
+    Input({"type": "init_store", "index": "project"}, "data")
+)
+def InitGraph(init):
+    element_data = json.loads(session["element_data"])
+    return element_data["elements"]
 
 
+@dash.callback(
+    Output({"type": "redirect", "index": "project"}, "pathname", allow_duplicate = True),
+    Output("current_node_id", "data", allow_duplicate = True),
+    Input("project_list", "n_clicks"),
+    prevent_initial_call = True
+)
+def RedirectToProjects(clickdata):
+    #session.clear()
+    if clickdata: return "/projects", None

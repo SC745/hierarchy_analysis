@@ -44,17 +44,6 @@ class User(UserMixin):
 def load_user(username):
     return User(username)
 
-app.layout = dmc.Box(
-    id = "session_data",
-    children = [
-        dcc.Store(id = {"type": "store", "index": "user_data"}, storage_type = "session", data = False),
-        dcc.Store(id = {"type": "store", "index": "project_data"}, storage_type = "session", data = False),
-        dcc.Store(id = {"type": "store", "index": "element_data"}, storage_type = "session", data = False),
-        dash.page_container,
-    ]
-)
-
-app.layout = dmc.MantineProvider(app.layout)
 
 @dash.callback(
     output = {
@@ -95,7 +84,6 @@ def Logout(clickdata):
         session.clear()
         logout_user()
         return "/login"
-
 
 
 if __name__ == '__main__':
