@@ -1,6 +1,6 @@
 import dash
 import dash_mantine_components as dmc
-from dash import Input, Output, State, _dash_renderer, dcc, html
+from dash import _dash_renderer, dcc
 
 _dash_renderer._set_react_version("18.2.0")
 dash.register_page(__name__)

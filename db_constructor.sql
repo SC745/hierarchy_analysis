@@ -1,6 +1,8 @@
 create table tbl_status(
 	id serial PRIMARY KEY,
-	status_name varchar(50)
+	status_name varchar(50),
+	status_code varchar(10),
+	status_stage int
 )
 
 create table tbl_projects(
@@ -30,7 +32,9 @@ create table tbl_groupdata(
 
 create table tbl_roles(
 	id serial PRIMARY KEY,
-	role_name varchar(50)
+	role_name varchar(50),
+	role_code varchar(10),
+	access_level int
 )
 
 create table tbl_userdata(
@@ -39,12 +43,15 @@ create table tbl_userdata(
 	role_id int references tbl_roles(id),
 	project_id int references tbl_projects(id) on delete CASCADE,
 	de_completed bool,
-	ce_completed bool
+	ce_completed bool,
+	de_competence float,
+	ce_competence float
 )
 
 create table tbl_superiority(
 	id serial PRIMARY KEY,
-	superiority_name varchar(50)
+	superiority_name varchar(50),
+	superiority_code int
 )
 
 create table tbl_nodes(

@@ -3,14 +3,13 @@ import dash_mantine_components as dmc
 from dash import Input, Output, State, _dash_renderer, ctx, ALL, dcc
 from dash_iconify import DashIconify
 from dash.exceptions import PreventUpdate
+import dash_cytoscape as cyto
 
 from flask import session
 from flask_login import current_user
 
 import functions
 import json
-
-import dash_cytoscape as cyto
 
 
 _dash_renderer._set_react_version("18.2.0")
@@ -34,7 +33,6 @@ def GetNodeInfo(node, element_data):
     return node_info
 
 def GetEdgeCheckboxes(source_node, element_data):
-    element_data["state"]
     nodes_df, edges_df = functions.ElementsToDfs(element_data["elements"])
 
     lowerlevel_df = nodes_df.loc[nodes_df["level"] == source_node["data"]["level"] + 1]
@@ -60,7 +58,6 @@ def layout():
         return dcc.Location(id = {"type": "unauthentificated", "index": "project"}, pathname = "/login")
     else:
         project_data = json.loads(session["project_data"])
-        user_data = current_user.userdata
 
         layout = dmc.AppShell(
             children = [
@@ -77,7 +74,7 @@ def layout():
                                         dmc.MenuDropdown(
                                             children = [
                                                 dmc.MenuItem(id = "project_settings", leftSection = DashIconify(icon = "mingcute:settings-3-line"), children = "Настройки"),
-                                                dmc.MenuItem(id = "restore_initial_hierarchy", leftSection = DashIconify(icon = "mingcute:refresh-3-fill"), children = "Восстановить исходную иерархию", disabled = True),
+                                                dmc.MenuItem(id = "restore_initial_hierarchy", leftSection = DashIconify(icon = "mingcute:refresh-3-fill"), children = "Восстановить базовую иерархию"),
                                                 dmc.MenuDivider(),
                                                 dmc.MenuItem(id = "project_list", leftSection = DashIconify(icon = "mingcute:list-check-fill"), children = "Список проектов")
                                             ]
@@ -85,10 +82,10 @@ def layout():
                                     ],
                                     trigger="hover",
                                 ),
-                                dmc.Text(project_data["name"] + " (" + project_data["status"] + ")"),
+                                dmc.Text(project_data["name"] + " (" + project_data["status"]["name"] + ")"),
                                 dmc.Menu(
                                     children = [
-                                        dmc.MenuTarget(dmc.Text(functions.GetShortUsername(user_data["name"]))),
+                                        dmc.MenuTarget(dmc.Text(functions.GetShortUsername(current_user.userdata["name"]))),
                                         dmc.MenuDropdown(
                                             children = [
                                                 dmc.MenuItem(id = {"type": "logout_button", "index": "project"}, leftSection = DashIconify(icon = "mingcute:exit-fill"), children = "Выйти", c = "red")
@@ -110,11 +107,11 @@ def layout():
                             children = [
                                 dmc.Group(
                                     children = [
-                                        dmc.ActionIcon(id = {"type": "step_button", "index": "rollback"}, children = DashIconify(icon = "mingcute:corner-down-left-fill", width=20), size = "input-sm", variant = "default", disabled = True),
-                                        dmc.ActionIcon(id = {"type": "step_button", "index": "cancelrollback"}, children = DashIconify(icon = "mingcute:corner-down-right-fill", width=20), size = "input-sm", variant = "default", disabled = True),
-                                        dmc.ActionIcon(id = "locate", children = DashIconify(icon = "mingcute:location-line", width=20), size = "input-sm", variant = "default"),
-                                        dmc.ActionIcon(id = "add_node", children = DashIconify(icon = "mingcute:cross-line", width=20), size = "input-sm", variant = "light", color = "green"),
-                                        dmc.ActionIcon(id = "save_graph", children = DashIconify(icon = "mingcute:save-2-line", width=20), size = "input-sm", variant = "light"),
+                                        dmc.ActionIcon(id = {"type": "step_button", "index": "rollback"}, children = DashIconify(icon = "mingcute:corner-down-left-fill", width = 20), size = "input-sm", variant = "default", disabled = True),
+                                        dmc.ActionIcon(id = {"type": "step_button", "index": "cancelrollback"}, children = DashIconify(icon = "mingcute:corner-down-right-fill", width = 20), size = "input-sm", variant = "default", disabled = True),
+                                        dmc.ActionIcon(id = "locate", children = DashIconify(icon = "mingcute:location-line", width = 20), size = "input-sm", variant = "default"),
+                                        dmc.ActionIcon(id = "add_node", children = DashIconify(icon = "mingcute:cross-line", width = 20), size = "input-sm", variant = "light", color = "green"),
+                                        dmc.ActionIcon(id = "save_graph", children = DashIconify(icon = "mingcute:save-2-line", width = 20), size = "input-sm", variant = "light"),
                                     ],
                                     grow=True,
                                     preventGrowOverflow=False,
@@ -442,6 +439,8 @@ def SaveGraph(clickdata):
         "rollback_disabled": Output({"type": "step_button", "index": "rollback"}, "disabled"),
         "cancelrollback_disabled": Output({"type": "step_button", "index": "cancelrollback"}, "disabled"),
         "addnode_disabled": Output("add_node", "disabled"),
+        "hierarchyrestore_disabled": Output("restore_initial_hierarchy", "disabled"),
+        "projectsettings_disabled": Output("project_settings", "disabled"),
     },
     inputs = {
         "input": {
@@ -455,11 +454,14 @@ def ElementChangeProcessing(input):
     current_node = functions.GetElementById(input["current_node_id"], input["elements"])
 
     element_data = json.loads(session["element_data"])
+    project_data = json.loads(session["project_data"])
 
     output = {}
     output["rollback_disabled"] = not bool(len(element_data["steps"]["history"]))
     output["cancelrollback_disabled"] = not bool(len(element_data["steps"]["canceled"]))
-    output["addnode_disabled"] = not (bool(element_data["state"]["selected"]) or not bool(len(element_data["elements"])))
+    output["addnode_disabled"] = not (bool(element_data["state"]["selected"]) or not bool(len(element_data["elements"])) and project_data["status"]["code"] == "initial" and project_data["role"]["code"] == "admin")
+    output["hierarchyrestore_disabled"] = not (project_data["status"]["code"] == "dep_eval" and project_data["role"]["code"] != "spectator")
+    output["projectsettings_disabled"] = not (project_data["role"]["code"] == "admin")
 
     if current_node: 
         output["placeholder_display"] = "none"
