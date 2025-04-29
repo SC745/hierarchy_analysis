@@ -44,8 +44,7 @@ create table tbl_userdata(
 	project_id int references tbl_projects(id) on delete CASCADE,
 	de_completed bool,
 	ce_completed bool,
-	de_competence float,
-	ce_competence float
+	competence float
 )
 
 create table tbl_superiority(
@@ -79,11 +78,8 @@ create table tbl_edgedata(
 
 create table tbl_compdata(
 	id serial PRIMARY KEY,
-	competence float,
 	superior bool,
 	superiority_id int references tbl_superiority(id),
-	parent_id int references tbl_nodes(id) on delete cascade,
-	node1_id int references tbl_nodes(id) on delete cascade,
-	node2_id int references tbl_nodes(id) on delete cascade,
-	user_id int references tbl_users(id) on delete cascade
+	edgedata1_id int references tbl_edgedata(id) on delete cascade,
+	edgedata2_id int references tbl_edgedata(id) on delete cascade
 )

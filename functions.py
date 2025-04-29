@@ -97,7 +97,7 @@ def GetMergedEdges(project_id):
         (
             select
             uuid,
-            sum(competence * (not deleted)::int) / sum(competence) as merge_value
+            sum(tbl_edgedata.competence * (not deleted)::int) / sum(tbl_edgedata.competence) as merge_value
             from
             tbl_edgedata
             inner join tbl_userdata on tbl_userdata.user_id = tbl_edgedata.user_id
@@ -709,7 +709,7 @@ def GetTaskTableData(project_id):
     table_data = GetProjectUserdata(project_id)
 
     table_data.drop(table_data[table_data["access_level"] == 1].index, inplace = True)
-    
+
     table_data["de_completed"] = [dmc.Checkbox(disabled = True, checked = row["de_completed"]) for index, row in table_data.iterrows()]
     table_data["ce_completed"] = [dmc.Checkbox(disabled = True, checked = row["ce_completed"]) for index, row in table_data.iterrows()]
 
@@ -796,34 +796,36 @@ def GetUserRole(user_login, project_id):
     if len(role_data): return role_data.to_dict("records")[0]
     else: return False
 
-#Получить данные сравнительной оценки по умолчанию
-def GetDefaultCompdata(project_data):
-    nodes_df, edges_df = GetProjectDfs(project_data, None)
-
-    #Получить пары id-uuid для вершин проекта
-    query = f"select id, uuid from tbl_nodes where project_id = {project_data['id']}"
-    cursor.execute(query)
-    nodedata = pd.DataFrame(cursor.fetchall(), columns = ["id", "uuid"])
-
-    #Получить данные по умолчанию
-    default_data = []
+#Сформировать набор данных для сравнительной оценки и записать в базу
+def CreateAndInsertCompdata(nodes_df, edges_df, edgedata):
+    data = []
+    user_ids = list(set(edgedata["user_id"]))
     for level in range(1, nodes_df["level"].max()):
         parent_ids = list(nodes_df[nodes_df["level"] == level]["id"])
         for parent_id in parent_ids:
-            children_ids = list(edges_df[edges_df["source"] == parent_id]["target"])
-            for i in range(len(children_ids)):
-                for j in range(i + 1, len(children_ids)):
-                    insert_row = {}
-                    insert_row["superiority_id"] = 1
-                    insert_row["superior"] = True
-                    insert_row["parent_id"] = nodedata.loc[nodedata["uuid"] == parent_id].iloc[0]["id"]
-                    insert_row["node1_id"] = nodedata.loc[nodedata["uuid"] == children_ids[i]].iloc[0]["id"]
-                    insert_row["node2_id"] = nodedata.loc[nodedata["uuid"] == children_ids[j]].iloc[0]["id"]
-                    default_data.append(insert_row)
+            edges = edges_df[edges_df["source"] == parent_id].to_dict("records")
+            for i in range(len(edges)):
+                for j in range(i + 1, len(edges)):
+                    for user_id in user_ids:
+                        insert_row = {}
+                        insert_row["superiority_id"] = 1
+                        insert_row["superior"] = True
+                        insert_row["edge1_id"] = edgedata.loc[(edgedata["uuid"] == edges[i]["id"]) & (edgedata["user_id"] == user_id)].iloc[0]["id"]
+                        insert_row["edge2_id"] = edgedata.loc[(edgedata["uuid"] == edges[j]["id"]) & (edgedata["user_id"] == user_id)].iloc[0]["id"]
+                        data.append(insert_row)
 
-    default_data = pd.DataFrame(default_data)
-    return default_data
+    data = pd.DataFrame(data)
 
+    data_tuples = list(data.itertuples(index = False, name = None))
+    data_args = ','.join(cursor.mogrify("(%s,%s,%s,%s)", i).decode('utf-8') for i in data_tuples)
+    
+    if len(data_args):
+        try: 
+            cursor.execute("insert into tbl_compdata (superiority_id, superior, edgedata1_id, edgedata2_id) values " + (data_args))
+            connection.commit()
+        except: return False
+
+    return True
 
 
 
@@ -837,16 +839,14 @@ def InsertUserdata(user_login, role_code, project_id):
         project_id, 
         de_completed, 
         ce_completed, 
-        de_competence, 
-        ce_competence)
+        competence)
         select 
         tbl_users.id as user_id, 
         tbl_roles.id as role_id,
         {project_id} as project_id,
         false as de_completed,
         false as ce_completed,
-        1 as de_competence,
-        1 as ce_competence
+        1 as competence
         from tbl_users, tbl_roles
         where login = '{user_login}' and role_code = '{role_code}'"""
     
@@ -912,7 +912,7 @@ def InsertUserEdgedata(user_login, project_id):
     if DeleteUserEdgedata(user_login, project_id):
         query = f"""insert into tbl_edgedata (competence, deleted, edge_id, user_id)
             select
-            t1.de_competence as competence,
+            t1.competence as competence,
             false as deleted,
             tbl_edges.id as edge_id, 
             t1.user_id
@@ -938,13 +938,13 @@ def InsertUserEdgedata(user_login, project_id):
 #Удалить данные сравнительной оценки для выбранного эксперта по проекту
 def DeleteUserCompdata(user_login, project_id):
     query = f"""delete from tbl_compdata 
-        using tbl_nodes, tbl_users
+        using tbl_edgedata, tbl_edges, tbl_users
         where 
-        (tbl_nodes.id = tbl_compdata.parent_id or
-        tbl_nodes.id = tbl_comp.node1_id or
-        tbl_nodes.id = tbl_comp.node2_id) and
-        tbl_users.id = tbl_edgedata.user_id and
-        tbl_nodes.project_id = {project_id}
+        (tbl_edgedata.id = tbl_compdata.edgedata1_id or
+        tbl_edgedata.id = tbl_compdata.edgedata2_id) and
+        tbl_edgedata.edge_id = tbl_edges.id and
+        tbl_edgedata.user_id = tbl_users.id and
+        tbl_edges.project_id = {project_id} and
         tbl_users.login = '{user_login}'"""
 
     try: 
@@ -957,33 +957,26 @@ def DeleteUserCompdata(user_login, project_id):
 #Вставить данные оценки зависимостей для выбранного эксперта по умолчанию
 def InsertUserCompdata(user_login, project_data):
     if DeleteUserCompdata(user_login, project_data["id"]):
-        query = f"""select user_id, ce_competence from tbl_userdata
-            inner join tbl_roles on tbl_roles.id = tbl_userdata.role_id
-            inner join tbl_users on tbl_users.id = tbl_userdata.user_id
-            where project_id = {project_data["id"]} and access_level > 1 and login = '{user_login}'"""
-        cursor.execute(query)
-        userdata = pd.DataFrame(cursor.fetchone(), columns = ["id", "competence"])
+        nodes_df, edges_df = GetProjectDfs(project_data, None)
 
-        if len(userdata): 
-            userdata = userdata.to_dict("records")[0]
+        query = f"""select tbl_edgedata.id, uuid, user_id from tbl_edgedata
+            inner join tbl_edges on tbl_edges.id = tbl_edgedata.edge_id
+            inner join tbl_users on tbl_users.id = tbl_edgedata.user_id
+            where 
+            uuid = any (%s) and
+            login = '{user_login}' and
+            project_id = {project_data['id']}
+            order by user_id, uuid"""
+        
+        edge_list = list(edges_df["id"])
+        cursor.execute(query, (edge_list,))
+        edgedata = pd.DataFrame(cursor.fetchall(), columns = ["id", "uuid", "user_id"])
 
-            default_data = GetDefaultCompdata(project_data)
-            default_data["user_id"] = userdata["id"]
-            default_data["competence"] = userdata["competence"]
-
-            data_tuples = list(default_data.itertuples(index = False, name = None))
-            data_args = ','.join(cursor.mogrify("(%s,%s,%s,%s,%s,%s,%s)", i).decode('utf-8') for i in data_tuples)
-
-            if len(data_args):
-                try: cursor.execute("insert into tbl_compdata (superiority_id, superior, parent_id, node1_id, node2_id, user_id, competence) values " + (data_args))
-                except: return False
-            else: return False
-        else: return False
-    else: return False
-
-    return True
+        return CreateAndInsertCompdata(nodes_df, edges_df, edgedata)
     
+    return False
 
+    
 
 #Обработка переходов между этапами ----------------------------------------------------------------------------------------------------
 
@@ -995,7 +988,9 @@ def DeleteEdgedata(project_id):
         tbl_edges.id = tbl_edgedata.edge_id and 
         tbl_edges.project_id = {project_id}"""
 
-    try: cursor.execute(query)
+    try: 
+        cursor.execute(query)
+        connection.commit()
     except: return False
 
     return True
@@ -1005,7 +1000,7 @@ def InsertEdgedata(project_id):
     if DeleteEdgedata(project_id):
         query = f"""insert into tbl_edgedata (competence, deleted, edge_id, user_id)
             select
-            t1.de_competence as competence,
+            t1.competence as competence,
             false as deleted,
             tbl_edges.id as edge_id, 
             t1.user_id
@@ -1018,7 +1013,9 @@ def InsertEdgedata(project_id):
             tbl_edges.project_id = {project_id} and
             t1.access_level > 1"""
         
-        try: cursor.execute(query)
+        try: 
+            cursor.execute(query)
+            connection.commit()
         except: return False
     else: return False
 
@@ -1027,14 +1024,16 @@ def InsertEdgedata(project_id):
 #Удалить данные сравнительной оценки по проекту
 def DeleteCompdata(project_id):
     query = f"""delete from tbl_compdata 
-        using tbl_nodes
+        using tbl_edgedata, tbl_edges
         where
-        (tbl_nodes.id = tbl_compdata.parent_id or
-        tbl_nodes.id = tbl_compdata.node1_id or
-        tbl_nodes.id = tbl_compdata.node2_id) and
-        tbl_nodes.project_id = {project_id}"""
+        (tbl_edgedata.id = tbl_compdata.edgedata1_id or
+        tbl_edgedata.id = tbl_compdata.edgedata2_id) and
+        tbl_edgedata.edge_id = tbl_edges.id and
+        tbl_edges.project_id = {project_id}"""
 
-    try: cursor.execute(query)
+    try: 
+        cursor.execute(query)
+        connection.commit()
     except: return False
 
     return True
@@ -1042,32 +1041,22 @@ def DeleteCompdata(project_id):
 #Вставить данные сравнительной оценки для всех экспертов проекта по умолчанию
 def InsertCompdata(project_data):
     if DeleteCompdata(project_data["id"]):
-        query = f"""select user_id, ce_competence from tbl_userdata
-            inner join tbl_roles on tbl_roles.id = tbl_userdata.role_id
-            where project_id = {project_data["id"]} and access_level > 1"""
-        cursor.execute(query)
-        userdata = pd.DataFrame(cursor.fetchall(), columns = ["id", "competence"]).to_dict("records")
+        nodes_df, edges_df = GetProjectDfs(project_data, None)
 
-        #Сформировать полные данные для вставки
-        default_data = GetDefaultCompdata(project_data)
-        main_data = pd.DataFrame()
-        for user in userdata:
-            default_data_copy = default_data.copy(deep=True)
-            default_data_copy["user_id"] = user["id"]
-            default_data_copy["competence"] = user["competence"]
-            main_data = pd.concat([main_data, default_data_copy])
-        main_data.reset_index(drop=True, inplace=True)
+        query = f"""select tbl_edgedata.id, uuid, user_id from tbl_edgedata
+            inner join tbl_edges on tbl_edges.id = tbl_edgedata.edge_id
+            where 
+            uuid = any (%s) and
+            project_id = {project_data['id']}
+            order by user_id, uuid"""
+        
+        edge_list = list(edges_df["id"])
+        cursor.execute(query, (edge_list,))
+        edgedata = pd.DataFrame(cursor.fetchall(), columns = ["id", "uuid", "user_id"])
 
-        data_tuples = list(main_data.itertuples(index = False, name = None))
-        data_args = ','.join(cursor.mogrify("(%s,%s,%s,%s,%s,%s,%s)", i).decode('utf-8') for i in data_tuples)
-
-        if len(data_args):
-            try: cursor.execute("insert into tbl_compdata (superiority_id, superior, parent_id, node1_id, node2_id, user_id, competence) values " + (data_args))
-            except: return False
-        else: return False
-    else: return False
-
-    return True
+        return CreateAndInsertCompdata(nodes_df, edges_df, edgedata)
+    
+    return False
 
 #Снять галочки выполнения этапа при возвращении на предыдущий
 def RemoveCompletedState(project_data):
@@ -1164,3 +1153,5 @@ def GetSelectData(select_id):
         data = pd.DataFrame(cursor.fetchall(), columns = ["value", "label", "access_level"]).to_dict("records")
 
     return data
+
+
