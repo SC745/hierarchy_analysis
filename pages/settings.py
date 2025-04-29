@@ -14,6 +14,8 @@ import json
 _dash_renderer._set_react_version("18.2.0")
 dash.register_page(__name__)
 
+role_data = functions.GetSelectData("role_select")
+
 radiogroup_data = {
     "Большинство": {"description": "Связь остается если за нее проголосовало большинство экспертов", "value": 0.5},
     "Все": {"description": "Связь остается только если за нее проголосовали все эксперты", "value": 1},
@@ -184,11 +186,11 @@ def layout():
                                         dmc.Box(
                                             children = [
                                                 dmc.Text("Этап проекта", fz = "xl", fw = 500, pb = "xs"),
-                                                dmc.Select(id = "status_select", data = functions.GetDropdownData("status_select"), value = project_data["status"]["code"], disabled = True, size = "md", w = 350),
+                                                dmc.Select(id = "status_select", data = functions.GetSelectData("status_select"), value = project_data["status"]["code"], disabled = True, size = "md", w = 350),
                                             ]
                                         ),
-                                        dmc.Button("Предыдущий", id = {"type": "status_change", "index": "prev"}, size = "md", w = 200),
-                                        dmc.Button("Следующий", id = {"type": "status_change", "index": "next"}, size = "md", w = 200),
+                                        dmc.Button("Предыдущий", id = {"type": "status_change", "index": "prev"}, disabled = bool(project_data["status"]["code"] == "initial"), size = "md", w = 200),
+                                        dmc.Button("Следующий", id = {"type": "status_change", "index": "next"}, disabled = bool(project_data["status"]["code"] == "completed"), size = "md", w = 200),
                                     ],
                                     gap = "md",
                                     align = "flex-end",
@@ -205,9 +207,10 @@ def layout():
                                 dmc.Text("Управление пользователями", fz = 24, fw = 500, pb = "sm"),
                                 dmc.Flex(
                                     children = [
-                                        dmc.Select(id = "user_select", data = functions.GetDropdownData("user_select"), label = "Пользователь", searchable = True, size = "md", w = 350),
-                                        dmc.Select(id = "role_select", data = functions.GetDropdownData("role_select"), label = "Роль", value = "expert", size = "md", w = 350),
-                                        dmc.Button("Добавить", id = "add_user", size = "md", w = 150),
+                                        dmc.Select(id = "user_select", data = functions.GetSelectData("user_select"), label = "Пользователь", searchable = True, size = "md", w = 350),
+                                        dmc.Select(id = "role_select", data = role_data, disabled = True, label = "Роль", size = "md", w = 350),
+                                        dmc.Button("Добавить", id = "add_user", disabled = True, size = "md", w = 150),
+                                        dmc.Button("Изменить роль", id = "change_role", disabled = True, size = "md", w = 180),
                                     ],
                                     gap = "md",
                                     align = "flex-end",
@@ -256,7 +259,8 @@ def layout():
             "project": Output({"type": "settings_page", "index": "project"}, "display"),
             "users": Output({"type": "settings_page", "index": "users"}, "display"),
             "competence": Output({"type": "settings_page", "index": "competence"}, "display"),
-        }
+        },
+        "task_table": Output("task_table", "children", allow_duplicate = True),
     },
     inputs = {
         "input": {
@@ -266,6 +270,7 @@ def layout():
     prevent_initial_call = True
 )
 def NavlinkClick(input):
+    project_data = json.loads(session["project_data"])
     page_keys = ["project", "users", "competence"]
 
     navlink_selected = {}
@@ -281,6 +286,7 @@ def NavlinkClick(input):
     output = {}
     output["navlink_selected"] = navlink_selected
     output["page_display"] = page_display
+    output["task_table"] = functions.CreateTableContent(["Имя", "Оценка зависимостей", "Сравнительная оценка"], functions.GetTaskTableData(project_data["id"]))
 
     return output
 
@@ -330,7 +336,7 @@ def RenameProject(clickdata, project_name):
 
 
 @dash.callback(
-    Output("status_select", "value"),
+    Output("status_select", "value", allow_duplicate = True),
     Output("task_table", "children"),
     Input({"type": "status_change", "index": ALL}, "n_clicks"),
     State("status_select", "value"),
@@ -352,7 +358,7 @@ def ChangeProjectStatus(clickdata, old_status, select_data):
         session["project_data"] = json.dumps(project_data, cls = functions.NpEncoder)
     else: raise PreventUpdate
 
-    task_table_content = functions.CreateTableContent(["Имя", "Оценка зависимостей", "Сравнительная оценка"], functions.GetProjectUsers(project_data["id"], True))
+    task_table_content = functions.CreateTableContent(["Имя", "Оценка зависимостей", "Сравнительная оценка"], functions.GetTaskTableData(project_data["id"]))
 
     return new_status_code, task_table_content
 
@@ -360,7 +366,8 @@ def ChangeProjectStatus(clickdata, old_status, select_data):
 @dash.callback(
     Output({"type": "status_change", "index": "prev"}, "disabled"),
     Output({"type": "status_change", "index": "next"}, "disabled"),
-    Input("status_select", "value")
+    Input("status_select", "value"),
+    prevent_initial_call = True
 )
 def StatusButtonState(project_status):
     prev_status_disabled = bool(project_status == "initial")
@@ -382,4 +389,111 @@ def DeleteProject(clickdata):
         session["project_data"] = json.dumps(project_data, cls = functions.NpEncoder)
         return "/projects"
     
+    raise PreventUpdate
+
+
+@dash.callback(
+    Output("role_select", "value"),
+    Output("role_select", "data"),
+    Output("role_select", "disabled"),
+    Output("add_user", "disabled"),
+    Output("change_role", "disabled"),
+    Input("user_select", "value"),
+    Input("role_select", "value"),
+    State("role_select", "data"),
+    prevent_initial_call = True
+)
+def SelectUser(user_login, role_code, role_select_data):
+    project_data = json.loads(session["project_data"])
+
+    user_role = functions.GetUserRole(user_login, project_data["id"])
+    if user_role:
+        if ctx.triggered_id != "role_select": role_code = user_role["role_code"]
+        role_select_disabled = bool(user_role["access_level"] >= project_data["role"]["access_level"])
+    else: 
+        if ctx.triggered_id == "user_select": role_code = None
+        role_select_disabled = False
+
+    if role_select_disabled: 
+        role_select_data = role_data
+    else:
+        role_select_data = pd.DataFrame(role_data)
+        role_select_data = role_select_data.loc[role_select_data["access_level"] < project_data["role"]["access_level"]].to_dict("records")
+        
+    add_user_disabled = not bool(role_code) or bool(user_role)
+    change_role_disabled = not (bool(role_code) and not role_select_disabled and bool(user_role))
+
+    return role_code, role_select_data, role_select_disabled, add_user_disabled, change_role_disabled
+
+
+@dash.callback(
+    Output("user_table", "children", allow_duplicate = True),
+    Output("role_select", "value", allow_duplicate = True),
+    Input("add_user", "n_clicks"),
+    State("user_select", "value"),
+    State("role_select", "value"),
+    prevent_initial_call = True
+)
+def AddUser(clickdata, user_login, role_code):
+    project_data = json.loads(session["project_data"])
+    res = functions.InsertUserdata(user_login, role_code, project_data["id"])
+    if project_data["status"]["stage"] > 1 and res:
+        res = functions.InsertUserEdgedata(user_login, project_data["id"])
+        if project_data["status"]["stage"] > 2 and res:
+            res = functions.InsertUserCompdata(user_login, project_data)
+                
+    if res: 
+        table_content = functions.CreateTableContent(["Имя", "Роль", "Удалить"], functions.GetUserTableData(project_data["id"], project_data["role"]["access_level"]))
+        return table_content, role_code
+
+    raise PreventUpdate
+
+
+@dash.callback(
+    Output("user_table", "children", allow_duplicate = True),
+    Input("change_role", "n_clicks"),
+    State("user_select", "value"),
+    State("role_select", "value"),
+    prevent_initial_call = True
+)
+def ChangeRole(clickdata, user_login, role_code):
+    project_data = json.loads(session["project_data"])
+    prev_role_code = functions.GetUserRole(user_login, project_data["id"])["role_code"]
+
+    res = functions.UpdateUserRole(user_login, role_code, project_data["id"])
+    if project_data["status"]["stage"] > 1 and "spectator" in [prev_role_code, role_code] and res:
+        res = functions.InsertUserEdgedata(user_login, project_data["id"])
+        if project_data["status"]["stage"] > 2 and res:
+            res = functions.InsertUserCompdata(user_login, project_data)
+
+    if res: 
+        table_content = functions.CreateTableContent(["Имя", "Роль", "Удалить"], functions.GetUserTableData(project_data["id"], project_data["role"]["access_level"]))
+        return table_content
+
+    raise PreventUpdate
+
+
+@dash.callback(
+    Output("user_table", "children", allow_duplicate = True),
+    Output("role_select", "value", allow_duplicate = True),
+    Input({"type": "delete_button", "index": ALL}, "n_clicks"),
+    State("user_select", "value"),
+    State("role_select", "value"),
+    prevent_initial_call = True
+)
+def DeleteUser(clickdata, user_login, role_code):
+    if ctx.triggered[0]["value"]:
+        project_data = json.loads(session["project_data"])
+        user_login = ctx.triggered_id["index"]
+
+        res = functions.DeleteUserdata(user_login, project_data["id"])
+        if project_data["status"]["stage"] > 1 and res:
+            res = functions.DeleteUserEdgedata(user_login, project_data["id"])
+            if project_data["status"]["stage"] > 2 and res:
+                res = functions.DeleteUserCompdata(user_login, project_data["id"])
+
+        if res: 
+            table_content = functions.CreateTableContent(["Имя", "Роль", "Удалить"], functions.GetUserTableData(project_data["id"], project_data["role"]["access_level"]))
+            return table_content, role_code
+
     raise PreventUpdate

@@ -82,7 +82,7 @@ def ProjectChoice(clickdata):
 
     if not trigger["value"]: raise PreventUpdate
 
-    project_data = functions.GetUserProjectById(current_user.userdata["id"], ctx.triggered_id["index"])
+    project_data = functions.GetProjectData(current_user.userdata["id"], ctx.triggered_id["index"])
 
     elements = functions.GetHierarchyPreset(*functions.GetProjectDfs(project_data, current_user.userdata["id"]))
 
@@ -114,7 +114,7 @@ def ProjectChoice(clickdata):
     prevent_initial_call = True
 )
 def CreateProject(clickdata, table_data):
-    if functions.InsertNewProject(current_user.userdata["id"]):
+    if functions.InsertNewProject(current_user.userdata["login"]):
         project_data = functions.GetUserProjects(current_user.userdata["id"])
         body = dmc.TableTbody([dmc.TableTr([dmc.TableTd(element[key]) for key in element.keys()]) for element in project_data])
         table_data[1] = body

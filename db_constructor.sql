@@ -77,7 +77,7 @@ create table tbl_edgedata(
 	user_id int references tbl_users(id) on delete cascade
 )
 
-create table tbl_comparisondata(
+create table tbl_compdata(
 	id serial PRIMARY KEY,
 	competence float,
 	superior bool,
