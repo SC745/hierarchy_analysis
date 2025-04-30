@@ -15,24 +15,8 @@ import json
 _dash_renderer._set_react_version("18.2.0")
 dash.register_page(__name__)
 
-def GetNodeInfo(node, element_data):
-    if node["data"]["id"] in element_data["state"]["cascade_deleted"].keys():
-        checked_state = False
-        disabled_state = True
-    elif node["data"]["id"] in element_data["state"]["manually_deleted"].keys():
-        checked_state = False
-        disabled_state = False
-    else:
-        checked_state = True
-        disabled_state = False
 
-    node_info = []
-    node_info.append(dmc.TextInput(id = "name_input", value = node["data"]["name"]))
-    node_info.append(dmc.Checkbox(id = "node_checkbox", size = 36, checked = checked_state, disabled = disabled_state))
-
-    return node_info
-
-def GetEdgeCheckboxes(source_node, element_data):
+def GetEdgeCheckboxes(source_node, element_data, project_data):
     nodes_df, edges_df = functions.ElementsToDfs(element_data["elements"])
 
     lowerlevel_df = nodes_df.loc[nodes_df["level"] == source_node["data"]["level"] + 1]
@@ -46,7 +30,8 @@ def GetEdgeCheckboxes(source_node, element_data):
         edge_checkbox.id = {"type": "edge_checkbox", "index": row["id"]}
         edge_checkbox.label = row["name"]
         edge_checkbox.checked = row["id"] in accessable_nodes
-        edge_checkbox.disabled = row["id"] in cascade_accessable_nodes
+        edge_checkbox.disabled = row["id"] in cascade_accessable_nodes or project_data["status"]["stage"] != 2 or project_data["role"]["access_level"] < 2
+
         if "target" in element_data["state"]["selected"]["data"] and element_data["state"]["selected"]["data"]["target"] == row["id"]: edge_checkbox.style = {"background-color": "#e8f3fc"}
 
         edge_checkboxes.append(edge_checkbox)
@@ -75,6 +60,8 @@ def layout():
                                             children = [
                                                 dmc.MenuItem(id = "project_settings", leftSection = DashIconify(icon = "mingcute:settings-3-line"), children = "Настройки"),
                                                 dmc.MenuItem(id = "restore_initial_hierarchy", leftSection = DashIconify(icon = "mingcute:refresh-3-fill"), children = "Восстановить базовую иерархию"),
+                                                dmc.MenuItem(children = dmc.Checkbox(id = {"type": "stage_completed", "index": "de_completed"}, label = "Оценка зависимостей завершена", checked = project_data["completed"]["de_completed"]), disabled = project_data["status"]["stage"] != 2 or project_data["role"]["access_level"] < 2),
+                                                dmc.MenuItem(children = dmc.Checkbox(id = {"type": "stage_completed", "index": "ce_completed"}, label = "Сравнительная оценка завершена", checked = project_data["completed"]["ce_completed"]), disabled = project_data["status"]["stage"] != 3 or project_data["role"]["access_level"] < 2),
                                                 dmc.MenuDivider(),
                                                 dmc.MenuItem(id = "project_list", leftSection = DashIconify(icon = "mingcute:list-check-fill"), children = "Список проектов")
                                             ]
@@ -140,7 +127,7 @@ def layout():
                                                         dmc.Text("Название"),
                                                         dmc.Group(
                                                             children = [
-                                                                dmc.TextInput(id = "name_input"),
+                                                                dmc.TextInput(id = "name_input", disabled = bool(project_data["status"]["stage"] > 1) or bool(project_data["role"]["access_level"] < 3)),
                                                                 dmc.Checkbox(id = "node_checkbox", size = 36, checked = True)
                                                             ],
                                                             justify = "space-around",
@@ -256,34 +243,50 @@ def layout():
 
 
 @dash.callback(
-    Output("current_node_id", "data", allow_duplicate = True),
-    Output("node_info", "children"),
-    Output("edge_checkboxes", "children"),
-    Output("graph", "elements", allow_duplicate = True),
-    Output("prev_action", "data", allow_duplicate = True),
-    Input("graph", "tapNodeData"),
-    Input("graph", "tapEdgeData"),
+    output = {
+        "current_node_id": Output("current_node_id", "data", allow_duplicate = True),
+        "name_input_value": Output("name_input", "value"),
+        "node_checkbox_checked": Output("node_checkbox", "checked"),
+        "node_checkbox_disabled": Output("node_checkbox", "disabled"),
+        "edge_checkboxes": Output("edge_checkboxes", "children"),
+        "elements": Output("graph", "elements", allow_duplicate = True),
+        "prev_action": Output("prev_action", "data", allow_duplicate = True),
+    },
+    inputs = {
+        "input": {
+            "tapNodeData": Input("graph", "tapNodeData"),
+            "tapEdgeData": Input("graph", "tapEdgeData"),
+        }
+    },
     prevent_initial_call = True
 )
-def SelectElement(tapNodeData, tapEdgeData):
+def SelectElement(input):
     trigger = {"id": ctx.triggered_id, "property": ctx.triggered[0]["prop_id"].split(".")[1], "value": ctx.triggered[0]["value"]}
 
+    project_data = json.loads(session["project_data"])
     element_data = json.loads(session["element_data"])
 
+    
     if trigger["property"] == "tapNodeData":
-        current_node = functions.GetElementById(tapNodeData["id"], element_data["elements"])
+        current_node = functions.GetElementById(input["tapNodeData"]["id"], element_data["elements"])
         element_data["state"]["selected"] = current_node
     else:
-        current_node = functions.GetElementById(tapEdgeData["source"], element_data["elements"])
-        element_data["state"]["selected"] = functions.GetElementById(tapEdgeData["id"], element_data["elements"])
-
-    node_info = GetNodeInfo(current_node, element_data)
-    edge_checkboxes = GetEdgeCheckboxes(current_node, element_data)
+        current_node = functions.GetElementById(input["tapEdgeData"]["source"], element_data["elements"])
+        element_data["state"]["selected"] = functions.GetElementById(input["tapEdgeData"]["id"], element_data["elements"])
 
     functions.ColorElements(element_data)
     session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
 
-    return current_node["data"]["id"], node_info, edge_checkboxes, element_data["elements"], False
+    output = {}
+    output["current_node_id"] = current_node["data"]["id"]
+    output["name_input_value"] = current_node["data"]["name"]
+    output["node_checkbox_checked"] = current_node["data"]["id"] not in list(element_data["state"]["cascade_deleted"].keys()) + list(element_data["state"]["manually_deleted"].keys())
+    output["node_checkbox_disabled"] = current_node["data"]["id"] in element_data["state"]["cascade_deleted"].keys() or project_data["status"]["stage"] > 2 or (project_data["role"]["access_level"] < 3 and project_data["status"]["stage"] == 1) or (project_data["role"]["access_level"] < 2 and project_data["status"]["stage"] == 2)
+    output["edge_checkboxes"] = GetEdgeCheckboxes(current_node, element_data, project_data)
+    output["elements"] = element_data["elements"]
+    output["prev_action"] = False
+
+    return output
 
 
 @dash.callback(
@@ -313,7 +316,7 @@ def CheckboxClick(node_checked, edge_checked, current_node_id, prev_action):
                 functions.AddStep(element, element_data, "delete")
         else:
             edge_object = functions.CreateEdgeObject(current_node["data"]["id"], trigger["id"]["index"])
-            functions.AddElement(edge_object, element_data["elements"])
+            functions.AddElement(edge_object, element_data)
             functions.AddStep(edge_object, element_data, "add")
 
         functions.ColorElements(element_data)
@@ -422,10 +425,12 @@ def SaveGraph(clickdata):
     element_data = json.loads(session["element_data"])
     project_data = json.loads(session["project_data"])
 
-    functions.SaveGraphToDB(project_data["id"], element_data)
+    if project_data["status"]["stage"] == 1: functions.SaveInitialGraphToDB(element_data, project_data["id"])
+    if project_data["status"]["stage"] == 2: functions.SaveEdgedataToDB(element_data, project_data["id"], current_user.userdata["id"])
 
     functions.ColorElements(element_data)
     functions.RefreshNodePositionsSizes(element_data["elements"])
+
     session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
 
     return element_data["elements"], True
@@ -439,6 +444,7 @@ def SaveGraph(clickdata):
         "rollback_disabled": Output({"type": "step_button", "index": "rollback"}, "disabled"),
         "cancelrollback_disabled": Output({"type": "step_button", "index": "cancelrollback"}, "disabled"),
         "addnode_disabled": Output("add_node", "disabled"),
+        "save_graph": Output("save_graph", "disabled"),
         "hierarchyrestore_disabled": Output("restore_initial_hierarchy", "disabled"),
         "projectsettings_disabled": Output("project_settings", "disabled"),
     },
@@ -448,20 +454,21 @@ def SaveGraph(clickdata):
             "current_node_id": State("current_node_id", "data"),
         }
     },
-    prevent_initial_call = True
+    prevent_initial_call = True 
 )
 def ElementChangeProcessing(input):
-    current_node = functions.GetElementById(input["current_node_id"], input["elements"])
-
     element_data = json.loads(session["element_data"])
     project_data = json.loads(session["project_data"])
+
+    current_node = functions.GetElementById(input["current_node_id"], input["elements"])
 
     output = {}
     output["rollback_disabled"] = not bool(len(element_data["steps"]["history"]))
     output["cancelrollback_disabled"] = not bool(len(element_data["steps"]["canceled"]))
-    output["addnode_disabled"] = not (bool(element_data["state"]["selected"]) or not bool(len(element_data["elements"])) and project_data["status"]["code"] == "initial" and project_data["role"]["code"] == "admin")
-    output["hierarchyrestore_disabled"] = not (project_data["status"]["code"] == "dep_eval" and project_data["role"]["code"] != "spectator")
-    output["projectsettings_disabled"] = not (project_data["role"]["code"] == "admin")
+    output["addnode_disabled"] = not ((bool(element_data["state"]["selected"]) or not bool(len(element_data["elements"]))) and project_data["status"]["stage"] == 1 and project_data["role"]["access_level"] > 2)
+    output["save_graph"] = (project_data["status"]["stage"] == 1 and project_data["role"]["access_level"] < 3) or (project_data["status"]["stage"] == 2 and project_data["role"]["access_level"] < 2) or project_data["status"]["stage"] > 2
+    output["hierarchyrestore_disabled"] = not (project_data["status"]["stage"] == 2 and project_data["role"]["access_level"] > 1)
+    output["projectsettings_disabled"] = not (project_data["role"]["access_level"] > 2)
 
     if current_node: 
         output["placeholder_display"] = "none"
@@ -481,6 +488,12 @@ def ElementChangeProcessing(input):
 )
 def InitGraph(init):
     element_data = json.loads(session["element_data"])
+    if element_data["state"]["selected"]: 
+        element_data["state"]["selected"] = functions.GetElementById(element_data["state"]["selected"]["data"]["id"], element_data["elements"])
+        element_data["state"]["selected"]["classes"] = "default"
+        element_data["state"]["selected"] = None
+
+    session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
     return element_data["elements"]
 
 
@@ -491,5 +504,50 @@ def InitGraph(init):
     prevent_initial_call = True
 )
 def RedirectToProjects(clickdata):
-    #session.clear()
+    SaveGraph(0)
     if clickdata: return "/projects", None
+
+
+@dash.callback(
+    Output({"type": "redirect", "index": "project"}, "pathname", allow_duplicate = True),
+    Input("project_settings", "n_clicks"),
+    prevent_initial_call = True
+)
+def RedirectToSettings(clickdata):
+    SaveGraph(0)
+    if clickdata: return "/settings"
+
+
+@dash.callback(
+    Output("current_node_id", "data", allow_duplicate = True),
+    Input("restore_initial_hierarchy", "n_clicks"),
+    prevent_initial_call = True
+)
+def RestoreInitialHierarchy(clickdata):
+    project_data = json.loads(session["project_data"])
+
+    if functions.DiscardEdgedataChanges(project_data["id"], current_user.userdata["id"]):
+        element_data = functions.GetElementData(project_data, current_user.userdata["id"])
+        session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
+    else: raise PreventUpdate
+
+    return None
+
+
+@dash.callback(
+    Output("graph", "elements", allow_duplicate = True),
+    Input({"type": "stage_completed", "index": ALL}, "checked"),
+    prevent_initial_call = True
+)
+def CompletedCheckboxes(checked):
+    project_data = json.loads(session["project_data"])
+    element_data = json.loads(session["element_data"])
+    option = ctx.triggered_id["index"]
+    checked = ctx.triggered[0]["value"]
+
+    if functions.ChangeCompleteState(project_data["id"], current_user.userdata["id"], option, checked):
+        project_data["completed"][option] = checked
+        session["project_data"] = json.dumps(project_data, cls = functions.NpEncoder)
+    else: raise PreventUpdate()
+
+    return element_data["elements"]

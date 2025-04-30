@@ -1,6 +1,5 @@
 import dash
-from dash import Dash, html, dcc
-from dash.dependencies import Input, Output, State, MATCH
+from dash import Dash, html, dcc, ctx, Input, Output, State, MATCH
 import dash_mantine_components as dmc
 from dash import _dash_renderer
 import functions
@@ -9,6 +8,8 @@ from dash.exceptions import PreventUpdate
 import os
 from flask import Flask, request, redirect, session
 from flask_login import login_user, LoginManager, UserMixin, logout_user, current_user
+
+import json
 
 
 _dash_renderer._set_react_version("18.2.0")
@@ -28,7 +29,6 @@ app = dash.Dash(
 )
 
 
-a = os.getenv("SECRET_KEY")
 server.config.update(SECRET_KEY=os.getenv("SECRET_KEY"))
 
 login_manager = LoginManager()
@@ -74,6 +74,7 @@ def Login(input):
         
     return output
 
+
 @dash.callback(
     Output({"type": "redirect", "index": MATCH}, "pathname", allow_duplicate = True),
     Input({"type": "logout_button", "index": MATCH}, "n_clicks"),
@@ -81,8 +82,16 @@ def Login(input):
 )
 def Logout(clickdata):
     if clickdata:
+        
+        project_data = json.loads(session["project_data"])
+        if ctx.triggered_id["index"] == "project":
+            element_data = json.loads(session["element_data"])
+            if project_data["status"]["stage"] == 1 and project_data["role"]["access_level"] > 2: functions.SaveInitialGraphToDB(element_data, project_data["id"])
+            if project_data["status"]["stage"] == 2 and project_data["role"]["access_level"] > 1: functions.SaveEdgedataToDB(element_data, project_data["id"], current_user.userdata["id"])
+
         session.clear()
         logout_user()
+
         return "/login"
 
 

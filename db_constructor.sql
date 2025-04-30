@@ -8,7 +8,10 @@ create table tbl_status(
 create table tbl_projects(
 	id serial PRIMARY KEY,
 	project_name varchar(50),
-	status_id int references tbl_status(id)
+	status_id int references tbl_status(id),
+	merge_coef float,
+	cons_coef float,
+	incons_coef float
 )
 
 create table tbl_users(
@@ -18,7 +21,7 @@ create table tbl_users(
 	password varchar(50),
 )
 
-create table tbl_group(
+create table tbl_groups(
 	id serial PRIMARY KEY,
 	group_name varchar(50),
 	project_id int references tbl_projects(id) on delete cascade

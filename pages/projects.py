@@ -83,23 +83,7 @@ def ProjectChoice(clickdata):
     if not trigger["value"]: raise PreventUpdate
 
     project_data = functions.GetProjectData(current_user.userdata["id"], ctx.triggered_id["index"])
-
-    elements = functions.GetHierarchyPreset(*functions.GetProjectDfs(project_data, current_user.userdata["id"]))
-
-    state = {}
-    state["manually_deleted"] = {}
-    state["cascade_deleted"] = {}
-    state["added"] = {}
-    state["selected"] = None
-
-    steps = {}
-    steps["history"] = []
-    steps["canceled"] = []
-
-    element_data = {}
-    element_data["elements"] = elements
-    element_data["state"] = state
-    element_data["steps"] = steps
+    element_data = functions.GetElementData(project_data, current_user.userdata["id"])
 
     session["project_data"] = json.dumps(project_data, cls = functions.NpEncoder)
     session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)

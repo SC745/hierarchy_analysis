@@ -46,18 +46,20 @@ def MakeRadioCard(label, description):
         pb = "lg"
     )
 
-def GetMergemethod(merge_value):
-    if merge_value == 0.5: return "Большинство"
-    if merge_value == 1: return "Все"
-    if merge_value == 0: return "Хотя бы один"
+def GetMergemethod(merge_coef):
+    if merge_coef == 0.5: return "Большинство"
+    if merge_coef == 1: return "Все"
+    if merge_coef == 0: return "Хотя бы один"
     return "Настроить"
 
 
 def layout():
-    if not current_user.is_authenticated:
-        return dcc.Location(id = {"type": "unauthentificated", "index": "settings"}, pathname = "/login")
+    if not current_user.is_authenticated: return dcc.Location(id = {"type": "unauthentificated", "index": "settings"}, pathname = "/login")
     else:
         project_data = json.loads(session["project_data"])
+
+        if project_data["role"]["access_level"] < 3: return dcc.Location(id = {"type": "access_denied", "index": "settings"}, pathname = "/project")
+
         layout = dmc.AppShell(
             children = [
                 dmc.AppShellHeader(
@@ -146,7 +148,7 @@ def layout():
                                         dmc.Text("Метод объединения иерархий", fz = "xl", fw = 500, pb = "sm"),
                                         dmc.RadioGroup(
                                             id = "mergemethod_radiogroup",
-                                            value = GetMergemethod(project_data["merge_value"]),
+                                            value = GetMergemethod(project_data["merge_coef"]),
                                             children = [MakeRadioCard(key, radiogroup_data[key]["description"]) for key in radiogroup_data.keys()],
                                             w = 550
                                         ),
@@ -154,7 +156,7 @@ def layout():
                                 ),
                                 dmc.Slider(
                                     id = "mergevalue_slider",
-                                    value = project_data["merge_value"],
+                                    value = project_data["merge_coef"],
                                     min = 0, 
                                     max = 1, 
                                     step = 0.01,
@@ -165,7 +167,7 @@ def layout():
                                         {"value": 0.75, "label": "0.75"},
                                         {"value": 1, "label": "1"},
                                     ],
-                                    disabled = bool(project_data["merge_value"] in [0, 0.5, 1]),
+                                    disabled = bool(project_data["merge_coef"] in [0, 0.5, 1]),
                                     w = 400,
                                     ml = "xl",
                                     pb = 64
@@ -314,7 +316,7 @@ def MergemethodChoice(method, slider_value):
 def MergevalueChoice(slider_value):
     project_data = json.loads(session["project_data"])
     if functions.UpdateMergevalue(slider_value, project_data["id"]):
-        project_data["merge_value"] = slider_value
+        project_data["merge_coef"] = slider_value
         session["project_data"] = json.dumps(project_data, cls = functions.NpEncoder)
 
     raise PreventUpdate
@@ -497,3 +499,17 @@ def DeleteUser(clickdata, user_login, role_code):
             return table_content, role_code
 
     raise PreventUpdate
+
+
+@dash.callback(
+    Output({"type": "redirect", "index": "settings"}, "pathname", allow_duplicate = True),
+    Input("to_project", "n_clicks"),
+    prevent_initial_call = True
+)
+def RedirectToProject(clickdata):
+    project_data = json.loads(session["project_data"])
+
+    element_data = functions.GetElementData(project_data, current_user.userdata["id"])
+    session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
+
+    if clickdata: return "/project"

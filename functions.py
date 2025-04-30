@@ -92,12 +92,12 @@ def GetMergedEdges(project_id):
         rated_edges.uuid, 
         source.uuid as source_id, 
         target.uuid as target_id,
-        rated_edges.merge_value
+        rated_edges.merge_coef
         from
         (
             select
             uuid,
-            sum(tbl_edgedata.competence * (not deleted)::int) / sum(tbl_edgedata.competence) as merge_value
+            sum(tbl_edgedata.competence * (not deleted)::int) / sum(tbl_edgedata.competence) as merge_coef
             from
             tbl_edgedata
             inner join tbl_userdata on tbl_userdata.user_id = tbl_edgedata.user_id
@@ -112,7 +112,7 @@ def GetMergedEdges(project_id):
         inner join tbl_nodes as target on target.id = tbl_edges.target_id"""
     
     cursor.execute(query)
-    merged_edges = pd.DataFrame(cursor.fetchall(), columns = ["id", "source", "target", "merge_value"])
+    merged_edges = pd.DataFrame(cursor.fetchall(), columns = ["id", "source", "target", "merge_coef"])
     return merged_edges
 
 #Получить датафрейм ребер из базы в зависимости от этапа проекта
@@ -145,10 +145,10 @@ def ExcludeDeletedElements(nodes_df, edges_df, project_data):
         if project_data["status"]["code"] == "dep_eval":
             edges_df.drop(edges_df.loc[edges_df["deleted"] == True].index, inplace = True)
         if project_data["status"]["code"] in ["comp_eval", "completed"]:
-            if project_data["merge_value"] > 0:
-                edges_df.drop(edges_df.loc[edges_df["merge_value"] < project_data["merge_value"]].index, inplace = True)
+            if project_data["merge_coef"] > 0:
+                edges_df.drop(edges_df.loc[edges_df["merge_coef"] < project_data["merge_coef"]].index, inplace = True)
             else: 
-                edges_df.drop(edges_df.loc[edges_df["merge_value"] == project_data["merge_value"]].index, inplace = True)
+                edges_df.drop(edges_df.loc[edges_df["merge_coef"] == project_data["merge_coef"]].index, inplace = True)
 
         nodes_df.drop(nodes_df.loc[~nodes_df["id"].isin(edges_df["target"]) & (nodes_df["id"] != head_id)].index, inplace = True)
 
@@ -517,11 +517,21 @@ def AddStep(element, element_data, action):
     element_data["steps"]["history"].append(step)
     element_data["steps"]["canceled"] = []
 
+#Очистить список элементов от удаленных
+def RemoveDeletedElements(element_data, deleted_elements):
+    element_data["state"]["manually_deleted"] = {}
+    element_data["state"]["cascade_deleted"] = {}
+    element_data["state"]["added"] = {}
+    element_data["steps"]["history"] = []
+    element_data["steps"]["canceled"] = []
+
+    for element in deleted_elements: element_data["elements"].remove(element)
+
 #Записать граф в базу
-def SaveGraphToDB(project_id, element_data):
+def SaveInitialGraphToDB(element_data, project_id):
     nodes_df, edges_df = ElementsToDfs(element_data["elements"])
-    nodes_df.drop(["width", "height", "level", "classes"], axis=1, inplace = True)
-    edges_df.drop(["deleted", "classes"], axis=1, inplace = True)
+    nodes_df.drop(["width", "height", "level", "classes"], axis = 1, inplace = True)
+    edges_df.drop(["deleted", "classes"], axis = 1, inplace = True)
 
     nodes_df["project_id"] = project_id
     edges_df["project_id"] = project_id
@@ -558,18 +568,102 @@ def SaveGraphToDB(project_id, element_data):
             if len(edge_args): cursor.execute("insert into tbl_edges (uuid, project_id, source_id, target_id) values " + (edge_args))
 
         connection.commit()
-
-        element_data["state"]["manually_deleted"] = {}
-        element_data["state"]["cascade_deleted"] = {}
-        element_data["state"]["added"] = {}
-        element_data["steps"]["history"] = []
-        element_data["steps"]["canceled"] = []
-
-        for element in deleted_elements: element_data["elements"].remove(element)
+        RemoveDeletedElements(element_data, deleted_elements)
     except: return False
     
     return True
 
+#Записать информацию о статусе ребер в базу
+def SaveEdgedataToDB(element_data, project_id, user_id):
+    nodes_df, edges_df = ElementsToDfs(element_data["elements"])
+    nodes_df.drop(["width", "height", "level", "classes"], axis = 1, inplace = True)
+    edges_df.drop(["classes"], axis = 1, inplace = True)
+
+    nodes_df["project_id"] = project_id
+    edges_df["project_id"] = project_id
+    edges_df["source_id"] = 0
+    edges_df["target_id"] = 0
+
+    DeselectElement(element_data)
+
+    deleted_edges = []
+    added_edges = []
+    
+    deleted_elements = []
+    for element in element_data["elements"]:
+        if element["classes"] not in ["default", "added"]:
+            if "source" in element["data"]: 
+                edges_df.loc[edges_df["id"] == element["data"]["id"], "deleted"] = True
+                deleted_edges.append(element)
+            deleted_elements.append(element)
+        else: 
+            if element["classes"] == "added" and "source" in element["data"]: added_edges.append(element)
+            element["classes"] = "default"
+
+        edges_df = GetEdges(project_id)
+
+        deleted_edge_ids = []
+        for edge in deleted_edges:
+            found_edge_id = edges_df.loc[(edges_df["source"] == edge["data"]["source"]) & (edges_df["target"] == edge["data"]["target"])].iloc[0]["id"]
+            deleted_edge_ids.append(found_edge_id)
+        
+        added_edge_ids = []
+        for edge in added_edges:
+            found_edge_id = edges_df.loc[(edges_df["source"] == edge["data"]["source"]) & (edges_df["target"] == edge["data"]["target"])].iloc[0]["id"]
+            added_edge_ids.append(found_edge_id)
+
+    try:
+        query = f"""update tbl_edgedata set deleted = true
+            from tbl_edges
+            where 
+            tbl_edges.id = tbl_edgedata.edge_id and
+            tbl_edges.uuid = any (%s) and
+            tbl_edgedata.user_id = {user_id} and
+            tbl_edges.project_id = {project_id}"""
+        cursor.execute(query, (deleted_edge_ids,))
+
+        query = f"""update tbl_edgedata set deleted = false
+            from tbl_edges
+            where 
+            tbl_edges.id = tbl_edgedata.edge_id and
+            tbl_edges.uuid = any (%s) and
+            tbl_edgedata.user_id = {user_id} and
+            tbl_edges.project_id = {project_id}"""
+        cursor.execute(query, (added_edge_ids,))
+
+        connection.commit()
+
+        RemoveDeletedElements(element_data, deleted_elements)
+    except: return False
+    
+    return True
+
+#Отменить изменения в иерархии на этапе "Оценка зависимостей"
+def DiscardEdgedataChanges(project_id, user_id):
+    query = f"""update tbl_edgedata
+    set deleted = false
+    from tbl_edges
+    where
+    tbl_edges.id = tbl_edgedata.edge_id and
+    user_id = {user_id} and
+    project_id = {project_id}"""
+
+    try: 
+        cursor.execute(query)
+        connection.commit()
+    except: return False
+
+    return True
+
+def ChangeCompleteState(project_id, user_id, option, state):
+    query = f"update tbl_userdata set {option} = {state} where user_id = {user_id} and project_id = {project_id}"
+
+    try:
+        cursor.execute(query)
+        connection.commit()
+    except: return False
+
+    return True
 
 
 #Вход и страница проектов ----------------------------------------------------------------------------------------------------
@@ -619,7 +713,7 @@ def GetProjectData(user_id, project_id):
     query = f"""select
         tbl_projects.id,
         tbl_projects.project_name,
-        tbl_projects.merge_value,
+        tbl_projects.merge_coef,
         tbl_status.id,
         tbl_status.status_name,
         tbl_status.status_code,
@@ -627,7 +721,9 @@ def GetProjectData(user_id, project_id):
         tbl_roles.id,
         tbl_roles.role_name,
         tbl_roles.role_code,
-        tbl_roles.access_level
+        tbl_roles.access_level,
+        tbl_userdata.de_completed,
+        tbl_userdata.ce_completed
         from
         tbl_projects
         inner join tbl_status on tbl_projects.status_id = tbl_status.id
@@ -638,7 +734,7 @@ def GetProjectData(user_id, project_id):
         tbl_userdata.project_id = {project_id}"""
     
     cursor.execute(query)
-    res = pd.DataFrame(cursor.fetchall(), columns = ["id", "name", "merge_value", "status_id", "status_name", "status_code", "status_stage", "role_id", "role_name", "role_code", "access_level"])
+    res = pd.DataFrame(cursor.fetchall(), columns = ["id", "name", "merge_coef", "status_id", "status_name", "status_code", "status_stage", "role_id", "role_name", "role_code", "access_level", "de_completed", "ce_completed"])
     res = res.to_dict("records")[0]
 
     status = {}
@@ -653,12 +749,17 @@ def GetProjectData(user_id, project_id):
     role["name"] = res["role_name"]
     role["access_level"] = res["access_level"]
 
+    completed = {}
+    completed["de_completed"] = res["de_completed"]
+    completed["ce_completed"] = res["ce_completed"]
+
     project_data = {}
     project_data["id"] = res["id"]
     project_data["name"] = res["name"]
-    project_data["merge_value"] = res["merge_value"]
+    project_data["merge_coef"] = res["merge_coef"]
     project_data["status"] = status
     project_data["role"] = role
+    project_data["completed"] = completed
 
     return project_data
 
@@ -673,13 +774,28 @@ def GetStatusByCode(status_code):
 #Заполнить БД данными о новом созданном проекте
 def InsertNewProject(user_login):
     try:
-        query = "insert into tbl_projects (project_name, status_id) values ('Новый проект', (select id from tbl_status where status_code = 'initial')) returning id"
+        query = """insert into tbl_projects (
+            project_name, 
+            status_id, 
+            merge_coef, 
+            cons_coef, 
+            incons_coef) 
+            select
+            'Новый проект' as project_name, 
+            tbl_status.id as status_id,
+            0.5 as merge_coef,
+            0.15 as cons_coef,
+            0.315 as incons_coef
+            from tbl_status
+            where status_code = 'initial'
+            returning id"""
         cursor.execute(query)
         project_id = cursor.fetchone()[0]
         res = InsertUserdata(user_login, "owner", project_id)
     except: return False
 
     return res
+
 
 
 #Страница настроек ----------------------------------------------------------------------------------------------------
@@ -730,8 +846,8 @@ def GetUserTableData(project_id, access_level):
     return table_data
 
 #Изменить условие объединения иерархий в базе
-def UpdateMergevalue(merge_value, project_id):
-    query = f"update tbl_projects set merge_value = {merge_value} where id = {project_id}"
+def UpdateMergevalue(merge_coef, project_id):
+    query = f"update tbl_projects set merge_coef = {merge_coef} where id = {project_id}"
     try: cursor.execute(query)
     except: return False
 
@@ -1120,6 +1236,27 @@ def GetEdge(source_id, target_id, elements):
         if "source" in element["data"]:
             if element["data"]["source"] == source_id and element["data"]["target"] == target_id:
                 return element
+
+#Получить первоначальную информацию об элементах иерархии
+def GetElementData(project_data, user_id):
+    elements = GetHierarchyPreset(*GetProjectDfs(project_data, user_id))
+
+    state = {}
+    state["manually_deleted"] = {}
+    state["cascade_deleted"] = {}
+    state["added"] = {}
+    state["selected"] = None
+
+    steps = {}
+    steps["history"] = []
+    steps["canceled"] = []
+
+    element_data = {}
+    element_data["elements"] = elements
+    element_data["state"] = state
+    element_data["steps"] = steps
+
+    return element_data
 
 #Получить сокращенное имя пользователя
 def GetShortUsername(username):
