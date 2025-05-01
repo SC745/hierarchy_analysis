@@ -69,8 +69,8 @@ def layout():
             header={"height": "30px"},
         )
     
-    layout = dmc.MantineProvider(layout)
-    return layout
+        layout = dmc.MantineProvider(layout)
+        return layout
 
 @dash.callback(
     Output({"type": "redirect", "index": "projects"}, "pathname", allow_duplicate = True),

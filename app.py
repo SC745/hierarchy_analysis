@@ -96,4 +96,4 @@ def Logout(clickdata):
 
 
 if __name__ == '__main__':
-    server.run(debug=True,port=9662,use_reloader=True)
+    server.run(debug=True,port=9662,use_reloader=True, host = "0.0.0.0")

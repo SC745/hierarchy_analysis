@@ -655,6 +655,7 @@ def DiscardEdgedataChanges(project_id, user_id):
 
     return True
 
+#Изменить статус готовности
 def ChangeCompleteState(project_id, user_id, option, state):
     query = f"update tbl_userdata set {option} = {state} where user_id = {user_id} and project_id = {project_id}"
 
@@ -714,6 +715,9 @@ def GetProjectData(user_id, project_id):
         tbl_projects.id,
         tbl_projects.project_name,
         tbl_projects.merge_coef,
+        tbl_projects.cons_coef,
+        tbl_projects.incons_coef,
+        tbl_projects.const_comp,
         tbl_status.id,
         tbl_status.status_name,
         tbl_status.status_code,
@@ -734,7 +738,7 @@ def GetProjectData(user_id, project_id):
         tbl_userdata.project_id = {project_id}"""
     
     cursor.execute(query)
-    res = pd.DataFrame(cursor.fetchall(), columns = ["id", "name", "merge_coef", "status_id", "status_name", "status_code", "status_stage", "role_id", "role_name", "role_code", "access_level", "de_completed", "ce_completed"])
+    res = pd.DataFrame(cursor.fetchall(), columns = ["id", "name", "merge_coef", "cons_coef", "incons_coef", "const_comp", "status_id", "status_name", "status_code", "status_stage", "role_id", "role_name", "role_code", "access_level", "de_completed", "ce_completed"])
     res = res.to_dict("records")[0]
 
     status = {}
@@ -757,6 +761,9 @@ def GetProjectData(user_id, project_id):
     project_data["id"] = res["id"]
     project_data["name"] = res["name"]
     project_data["merge_coef"] = res["merge_coef"]
+    project_data["cons_coef"] = res["cons_coef"]
+    project_data["incons_coef"] = res["incons_coef"]
+    project_data["const_comp"] = res["const_comp"]
     project_data["status"] = status
     project_data["role"] = role
     project_data["completed"] = completed
@@ -779,13 +786,15 @@ def InsertNewProject(user_login):
             status_id, 
             merge_coef, 
             cons_coef, 
-            incons_coef) 
+            incons_coef,
+            const_comp) 
             select
             'Новый проект' as project_name, 
             tbl_status.id as status_id,
             0.5 as merge_coef,
             0.15 as cons_coef,
-            0.315 as incons_coef
+            0.315 as incons_coef,
+            true as const_comp
             from tbl_status
             where status_code = 'initial'
             returning id"""
@@ -813,7 +822,7 @@ def GetProjectUserdata(project_id):
         inner join tbl_users on tbl_users.id = tbl_userdata.user_id
         inner join tbl_roles on tbl_roles.id = tbl_userdata.role_id
         where project_id = {project_id}
-        order by tbl_roles.id"""
+        order by user_name"""
     
     cursor.execute(query)
     userdata = pd.DataFrame(cursor.fetchall(), columns = ["login", "name", "role", "access_level", "de_completed", "ce_completed"])
@@ -1092,7 +1101,50 @@ def InsertUserCompdata(user_login, project_data):
     
     return False
 
+
+
+#Обработка изменения компетентности ----------------------------------------------------------------------------------------------------
+
+#Получить компетентность по исходящим ребрам для пользователя
+def GetEdgeCompetenceData(source_id = 0, user_id = 0, project_id = 0):
+    query = f"""select
+        target_name,
+        competence,
+        tbl_edgedata.id
+        from
+        tbl_edgedata
+        inner join tbl_edges on tbl_edges.id = tbl_edgedata.edge_id
+        inner join (select id, node_name as source_name from tbl_nodes) as source_table on source_table.id = tbl_edges.source_id
+        inner join (select id, node_name as target_name from tbl_nodes) as target_table on target_table.id = tbl_edges.target_id
+        where 
+        tbl_edges.source_id = {source_id} and
+        tbl_edgedata.user_id = {user_id} and
+        tbl_edges.project_id = {project_id}
+        order by target_name"""
     
+    cursor.execute(query)
+    competence_data = pd.DataFrame(cursor.fetchall(), columns = ["name", "competence", "table_id"])
+    competence_data = CreateCompetenceData(competence_data, "edge_competence")
+
+    return competence_data
+
+#Получить компетентность пользователей по умолчанию
+def GetUserCompetenceData(project_id):
+    query = f"""select user_name, competence, tbl_userdata.id
+        from tbl_users
+        inner join tbl_userdata on tbl_userdata.user_id = tbl_users.id
+        inner join tbl_roles on tbl_roles.id = tbl_userdata.role_id
+        where access_level > 1 and project_id = {project_id}
+        order by user_name"""
+    
+    cursor.execute(query)
+    competence_data = pd.DataFrame(cursor.fetchall(), columns = ["name", "competence", "table_id"])
+    competence_data = CreateCompetenceData(competence_data, "user_competence")
+
+    return competence_data
+
+
+
 
 #Обработка переходов между этапами ----------------------------------------------------------------------------------------------------
 
@@ -1272,8 +1324,17 @@ def CreateTableContent(columns, data):
     body = dmc.TableTbody([dmc.TableTr([dmc.TableTd(element[key]) for key in element.keys()]) for element in data])
     return [head, body]
 
+#Cоздать список компетентностей
+def CreateCompetenceData(competence_data, competence_type):
+    competence_data["name_col"] = [row["name"] for index, row in competence_data.iterrows()]
+    competence_data["competence_col"] = [dmc.NumberInput(id = {"type": competence_type, "index": row["table_id"]}, value = row["competence"], min = 0, max = 1, step = 0.05, clampBehavior = "strict", decimalScale = 2) for index, row in competence_data.iterrows()]
+    competence_data.drop(["name", "competence", "table_id"], axis = 1, inplace = True)
+    competence_data = competence_data.to_dict("records")
+
+    return competence_data
+
 #Получить данные выпадающего списка
-def GetSelectData(select_id):
+def GetSelectData(select_id, project_id = 0):
     if select_id == "status_select":
         query = "select status_code, status_name, status_stage from tbl_status order by status_stage"
         cursor.execute(query)
@@ -1288,6 +1349,28 @@ def GetSelectData(select_id):
         query = "select role_code, role_name, access_level from tbl_roles order by access_level"
         cursor.execute(query)
         data = pd.DataFrame(cursor.fetchall(), columns = ["value", "label", "access_level"]).to_dict("records")
+
+    if select_id == "user_select_competence":
+        query = f"""select tbl_users.id, user_name 
+            from tbl_users 
+            inner join tbl_userdata on tbl_userdata.user_id = tbl_users.id
+            inner join tbl_roles on tbl_roles.id = tbl_userdata.role_id
+            where tbl_roles.access_level > 1 and tbl_userdata.project_id = {project_id}
+            order by user_name"""
+        cursor.execute(query)
+        data = pd.DataFrame(cursor.fetchall(), columns = ["value", "label"])
+        data['value'] = data['value'].astype(str)
+        data = data.to_dict("records")
+
+    if select_id == "source_node_select":
+        query = f"""select distinct tbl_nodes.id, node_name
+            from tbl_nodes inner join tbl_edges on tbl_edges.source_id = tbl_nodes.id
+            where tbl_nodes.project_id = {project_id}
+            order by node_name"""
+        cursor.execute(query)
+        data = pd.DataFrame(cursor.fetchall(), columns = ["value", "label"])
+        data['value'] = data['value'].astype(str)
+        data = data.to_dict("records")
 
     return data
 

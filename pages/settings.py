@@ -16,11 +16,16 @@ dash.register_page(__name__)
 
 role_data = functions.GetSelectData("role_select")
 
-radiogroup_data = {
+merge_radiogroupdata = {
     "Большинство": {"description": "Связь остается если за нее проголосовало большинство экспертов", "value": 0.5},
     "Все": {"description": "Связь остается только если за нее проголосовали все эксперты", "value": 1},
     "Хотя бы один": {"description": "Связь остается если за нее проголосовал хотя бы один эксперт", "value": 0},
     "Настроить": {"description": "Установить долю голосов экспертов, необходимую для оставления связи", "value": None},
+}
+
+competence_radiogroupdata = {
+    "Постоянный": {"description": "Компетентность эксперта при оценке связей постоянна"},
+    "Настраиваемый": {"description": "Установить компетентность эксперта для оценки каждой связи"},
 }
 
 def MakeRadioCard(label, description):
@@ -33,7 +38,6 @@ def MakeRadioCard(label, description):
                         children = [
                             dmc.Text(label, lh = "1.3", fz = "md", fw = "bold"),
                             dmc.Text(description, size = "sm", c = "dimmed"),
-                            
                         ]
                     )
                 ], 
@@ -149,7 +153,7 @@ def layout():
                                         dmc.RadioGroup(
                                             id = "mergemethod_radiogroup",
                                             value = GetMergemethod(project_data["merge_coef"]),
-                                            children = [MakeRadioCard(key, radiogroup_data[key]["description"]) for key in radiogroup_data.keys()],
+                                            children = [MakeRadioCard(key, merge_radiogroupdata[key]["description"]) for key in merge_radiogroupdata.keys()],
                                             w = 550
                                         ),
                                     ]
@@ -233,6 +237,54 @@ def layout():
                         dmc.Box(
                             children = [
                                 dmc.Text("Управление компетентностью", fz = 24, fw = 500, pb = "sm"),
+                                dmc.Box(
+                                    children = [
+                                        dmc.Text("Тип компетентности", fz = "xl", fw = 500, pb = "sm"),
+                                        dmc.RadioGroup(
+                                            id = "competence_radiogroup",
+                                            value = "Постоянный" if project_data["const_comp"] else "Настраиваемый",
+                                            children = [MakeRadioCard(key, competence_radiogroupdata[key]["description"]) for key in competence_radiogroupdata.keys()],
+                                            w = 550
+                                        ),
+                                    ]
+                                ),
+                                dmc.Box(
+                                    children = [
+                                        dmc.Text("Настройка постоянной компетентности пользователей", fz = "xl", fw = 500, pb = "xs"),
+                                        dmc.Table(
+                                            id = "user_competence_table",
+                                            children = functions.CreateTableContent(["Пользователь", "Компетентность"], functions.GetUserCompetenceData(project_data["id"])),
+                                            highlightOnHover = True,
+                                            withTableBorder = True,
+                                            fz = "md"
+                                        )
+                                    ],
+                                    id = "user_competence_container",
+                                    display = "block" if project_data["const_comp"] else "none"
+                                ),
+                                dmc.Box(
+                                    children = [
+                                        dmc.Text("Настройка компетентности пользователя при оценке связи", fz = "xl", fw = 500, pb = "xs"),
+                                        dmc.Flex(
+                                            children = [
+                                                dmc.Select(id = "user_select_competence", data = functions.GetSelectData("user_select_competence", project_data["id"]), label = "Пользователь", searchable = True, size = "md", w = 350),
+                                                dmc.Select(id = "source_node_select", data = functions.GetSelectData("source_node_select", project_data["id"]), label = "Группа критериев", searchable = True, size = "md", w = 350),
+                                            ],
+                                            gap = "md",
+                                            align = "flex-end",
+                                            pb = "sm"
+                                        ),
+                                        dmc.Table(
+                                            id = "edge_competence_table",
+                                            children = functions.CreateTableContent(["Критерий", "Компетентность"], functions.GetEdgeCompetenceData()),
+                                            highlightOnHover = True,
+                                            withTableBorder = True,
+                                            fz = "md"
+                                        )
+                                    ],
+                                    id = "edge_competence_container",
+                                    display = "block" if not project_data["const_comp"] else "none"
+                                )
                             ],
                             id = {"type": "settings_page", "index": "competence"},
                             display = "none",
@@ -302,7 +354,7 @@ def NavlinkClick(input):
 )
 def MergemethodChoice(method, slider_value):
     slider_disabled = bool(method != "Настроить")
-    if method != "Настроить": slider_value = radiogroup_data[method]["value"]
+    if method != "Настроить": slider_value = merge_radiogroupdata[method]["value"]
 
     return slider_value, slider_disabled
 
@@ -500,6 +552,14 @@ def DeleteUser(clickdata, user_login, role_code):
 
     raise PreventUpdate
 
+@dash.callback(
+    Output("user_competence_container", "display"),
+    Output("edge_competence_container", "display"),
+    Input("competence_radiogroup", "value"),
+    prevent_initial_call = True
+)
+def CompetenceTypeChoice(competence_type):
+    a = 0
 
 @dash.callback(
     Output({"type": "redirect", "index": "settings"}, "pathname", allow_duplicate = True),
