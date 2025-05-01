@@ -838,7 +838,7 @@ def GetTaskTableData(project_id):
     table_data["de_completed"] = [dmc.Checkbox(disabled = True, checked = row["de_completed"]) for index, row in table_data.iterrows()]
     table_data["ce_completed"] = [dmc.Checkbox(disabled = True, checked = row["ce_completed"]) for index, row in table_data.iterrows()]
 
-    table_data.drop(["role", "access_level", "login"], axis=1, inplace = True)
+    table_data.drop(["role", "access_level", "login"], axis = 1, inplace = True)
     table_data = table_data.to_dict("records")
 
     return table_data
@@ -1106,7 +1106,7 @@ def InsertUserCompdata(user_login, project_data):
 #Обработка изменения компетентности ----------------------------------------------------------------------------------------------------
 
 #Получить компетентность по исходящим ребрам для пользователя
-def GetEdgeCompetenceData(source_id = 0, user_id = 0, project_id = 0):
+def GetUserEdgeCompetenceData(source_id, user_id):
     query = f"""select
         target_name,
         competence,
@@ -1118,9 +1118,29 @@ def GetEdgeCompetenceData(source_id = 0, user_id = 0, project_id = 0):
         inner join (select id, node_name as target_name from tbl_nodes) as target_table on target_table.id = tbl_edges.target_id
         where 
         tbl_edges.source_id = {source_id} and
-        tbl_edgedata.user_id = {user_id} and
-        tbl_edges.project_id = {project_id}
+        tbl_edgedata.user_id = {user_id}
         order by target_name"""
+    
+    cursor.execute(query)
+    competence_data = pd.DataFrame(cursor.fetchall(), columns = ["name", "competence", "table_id"])
+    competence_data = CreateCompetenceData(competence_data, "edge_competence")
+
+    return competence_data
+
+#Получить компетентность по исходящим ребрам для групп пользователей
+def GetGroupEdgeCompetenceData(source_id, group_id):
+    query = f"""select 
+        tbl_nodes.node_name, 
+        case when count(distinct tbl_edgedata.competence) = 1 then max(tbl_edgedata.competence) else -1 end competence, 
+        tbl_edges.id
+        from 
+        tbl_edges
+        inner join tbl_nodes on tbl_nodes.id = tbl_edges.target_id
+        left outer join tbl_edgedata on tbl_edgedata.edge_id = tbl_edges.id
+        inner join tbl_groupdata on tbl_groupdata.user_id = tbl_edgedata.user_id
+        where source_id = {source_id} and tbl_groupdata.group_id = {group_id}
+        group by tbl_edges.id, tbl_nodes.node_name
+        order by tbl_nodes.node_name"""
     
     cursor.execute(query)
     competence_data = pd.DataFrame(cursor.fetchall(), columns = ["name", "competence", "table_id"])
@@ -1143,6 +1163,69 @@ def GetUserCompetenceData(project_id):
 
     return competence_data
 
+#Установить компетентность пользователей при оценке связей по умолчанию
+def SetDefaultEdgeCompetence(project_id):
+    query = f"""update tbl_edgedata 
+        set competence = tbl_userdata.competence
+        from tbl_userdata
+        where tbl_edgedata.user_id = tbl_userdata.user_id and
+        tbl_userdata.project_id = {project_id}"""
+    
+    try: 
+        cursor.execute(query)
+        connection.commit()
+    except: return False
+
+    return True
+
+#Установить компетентность пользователей при оценке связей по умолчанию
+def SetCompetenceType(project_id, const_comp):
+    query = f"update tbl_projects set const_comp = {const_comp} where id = {project_id}"
+    
+    try: 
+        cursor.execute(query)
+        connection.commit()
+    except: return False
+
+    return True
+
+#Установить компетентность выбранному пользователю при оценке выбранных связей
+def SetUserEdgeCompetence(competence_data, user_id):
+    competence_data = ','.join(cursor.mogrify("(%s,%s)", i).decode('utf-8') for i in competence_data)
+
+    if len(competence_data):
+        query = f"""update tbl_edgedata set competence = data.competence
+            from (values {competence_data}) as data(competence, id), tbl_users 
+            where 
+            data.id = tbl_edgedata.id and
+            tbl_users.id = {user_id}"""
+
+        try: 
+            cursor.execute(query)
+            connection.commit()
+        except: return False
+    else: return False
+
+    return True
+
+#Установить компетентность выбранному пользователю при оценке выбранных связей
+def SetGroupEdgeCompetence(competence_data, group_id):
+    competence_data = ','.join(cursor.mogrify("(%s,%s)", i).decode('utf-8') for i in competence_data)
+
+    if len(competence_data):
+        query = f"""update tbl_edgedata set competence = data.competence
+            from (values {competence_data}) as data(competence, id), tbl_groupdata
+            where 
+            data.id = tbl_edgedata.edge_id and
+            tbl_edgedata.user_id = tbl_groupdata.user_id and
+            tbl_groupdata.group_id = {group_id}"""
+        try: 
+            cursor.execute(query)
+            connection.commit()
+        except: return False
+    else: return False
+
+    return True
 
 
 
@@ -1327,14 +1410,14 @@ def CreateTableContent(columns, data):
 #Cоздать список компетентностей
 def CreateCompetenceData(competence_data, competence_type):
     competence_data["name_col"] = [row["name"] for index, row in competence_data.iterrows()]
-    competence_data["competence_col"] = [dmc.NumberInput(id = {"type": competence_type, "index": row["table_id"]}, value = row["competence"], min = 0, max = 1, step = 0.05, clampBehavior = "strict", decimalScale = 2) for index, row in competence_data.iterrows()]
+    competence_data["competence_col"] = [dmc.NumberInput(id = {"type": competence_type, "index": row["table_id"]}, value = row["competence"] if row["competence"] > 0 else "", min = 0, max = 1, step = 0.05, clampBehavior = "strict", decimalScale = 2) for index, row in competence_data.iterrows()]
     competence_data.drop(["name", "competence", "table_id"], axis = 1, inplace = True)
     competence_data = competence_data.to_dict("records")
 
     return competence_data
 
 #Получить данные выпадающего списка
-def GetSelectData(select_id, project_id = 0):
+def GetSelectData(select_id, project_id = 0, group_checked = False):
     if select_id == "status_select":
         query = "select status_code, status_name, status_stage from tbl_status order by status_stage"
         cursor.execute(query)
@@ -1350,13 +1433,17 @@ def GetSelectData(select_id, project_id = 0):
         cursor.execute(query)
         data = pd.DataFrame(cursor.fetchall(), columns = ["value", "label", "access_level"]).to_dict("records")
 
-    if select_id == "user_select_competence":
-        query = f"""select tbl_users.id, user_name 
-            from tbl_users 
-            inner join tbl_userdata on tbl_userdata.user_id = tbl_users.id
-            inner join tbl_roles on tbl_roles.id = tbl_userdata.role_id
-            where tbl_roles.access_level > 1 and tbl_userdata.project_id = {project_id}
-            order by user_name"""
+    if select_id == "competence_select":
+        if group_checked:
+            query = f"select id, group_name from tbl_groups where project_id = {project_id}"
+        else:
+             query = f"""select tbl_users.id, user_name 
+                from tbl_users 
+                inner join tbl_userdata on tbl_userdata.user_id = tbl_users.id
+                inner join tbl_roles on tbl_roles.id = tbl_userdata.role_id
+                where tbl_roles.access_level > 1 and tbl_userdata.project_id = {project_id}
+                order by user_name"""
+             
         cursor.execute(query)
         data = pd.DataFrame(cursor.fetchall(), columns = ["value", "label"])
         data['value'] = data['value'].astype(str)
