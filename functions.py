@@ -667,6 +667,27 @@ def ChangeCompleteState(project_id, user_id, option, state):
 
     return True
 
+#Получить данные сравнительной оценки для пользователя
+def GetUserCompdata(source_node_id, user_id):
+    query = f"""select n0.node_name source_node_name, n1.node_name t1_node_name, n2.node_name t2_node_name, superior, superiority_code, tbl_compdata.id
+        from tbl_compdata
+        inner join tbl_superiority on tbl_superiority.id = tbl_compdata.superiority_id
+        inner join tbl_edgedata ed1 on ed1.id = tbl_compdata.edgedata1_id
+        inner join tbl_edgedata ed2 on ed2.id = tbl_compdata.edgedata2_id
+        inner join tbl_edges e1 on e1.id = ed1.edge_id
+        inner join tbl_edges e2 on e2.id = ed2.edge_id
+        inner join tbl_nodes n0 on n0.id = e1.source_id
+        inner join tbl_nodes n1 on n1.id = e1.target_id
+        inner join tbl_nodes n2 on n2.id = e2.target_id
+        where ed1.user_id = {user_id} and n0.uuid = '{source_node_id}'
+        order by t1_node_name"""
+    
+    cursor.execute(query)
+    compdata = pd.DataFrame(cursor.fetchall(), columns = ["source_node_name", "t1_node_name", "t2_node_name", "superior", "code", "table_id"]).to_dict("records")
+
+    return compdata
+
+
 
 #Вход и страница проектов ----------------------------------------------------------------------------------------------------
 
@@ -793,7 +814,7 @@ def InsertNewProject(user_login):
             'Новый проект' as project_name, 
             tbl_status.id as status_id,
             0.5 as merge_coef,
-            0.15 as cons_coef,
+            0.1 as cons_coef,
             0.315 as incons_coef,
             true as const_comp
             from tbl_status
@@ -1462,4 +1483,36 @@ def GetSelectData(select_id, project_id = 0, group_checked = False):
 
     return data
 
+#Построить таблицу сравнительной оценки
+def MakeSimpleGrid(superiority_data):
+    source_node_name = superiority_data[0]["source_node_name"]
+    superiority_data = pd.DataFrame(superiority_data)
+    targret_node_names = list(superiority_data["t1_node_name"]) + list(superiority_data["t2_node_name"])
+    targret_node_names = set(targret_node_names)
+    targret_node_names = list(targret_node_names)
+    targret_node_names = list(set(list(superiority_data["t1_node_name"]) + list(superiority_data["t2_node_name"])))
+    superiority_data = superiority_data.to_dict("records")
 
+
+    matrix_dim = len(targret_node_names)
+
+    simple_grid_children = [0] * pow(matrix_dim + 1, 2)
+    simple_grid_children[0] = dmc.Box(source_node_name)
+    for index, targret_node_name in enumerate(targret_node_names): 
+        simple_grid_children[index + 1] = dmc.Box(targret_node_name)
+        simple_grid_children[(matrix_dim + 2) * (index + 1)] = dmc.Box("1")
+        simple_grid_children[(matrix_dim + 1) * (index + 1)] = dmc.Box(targret_node_name)
+
+    list_index = matrix_dim + 3
+    for index, superiority_data_item in enumerate(superiority_data):
+        if superiority_data_item["superior"]: 
+            simple_grid_children[list_index] = dmc.Box(id = {"type": "upper_node", "index": superiority_data_item["table_id"]}, children = str(superiority_data_item["code"]))
+            simple_grid_children[list_index + (index % 2 + 1) * matrix_dim] = dmc.Box(id = {"type": "lower_node", "index": superiority_data_item["table_id"]}, children = "1/" + str(superiority_data_item["code"]) if str(superiority_data_item["code"]) != "1" else "1")
+        else:
+            simple_grid_children[list_index] = dmc.Box(id = {"type": "upper_node", "index": superiority_data_item["table_id"]}, children = "1/" + str(superiority_data_item["code"]) if str(superiority_data_item["code"]) != "1" else "1")
+            simple_grid_children[list_index + (index % 2 + 1) * matrix_dim] = dmc.Box(id = {"type": "lower_node", "index": superiority_data_item["table_id"]}, children = str(superiority_data_item["code"]))
+
+        if list_index % (matrix_dim + 1) == 0: list_index += 1
+        else: list_index += matrix_dim - 1
+
+    return dmc.SimpleGrid(cols = matrix_dim + 1, spacing = 0, verticalSpacing = 0, children = simple_grid_children)

@@ -112,6 +112,12 @@ def layout():
                                     leftSection = DashIconify(icon = "mingcute:certificate-line"),
                                     active = False
                                 ),
+                                dmc.NavLink(
+                                    id = {"type": "settings_navlink", "index": "groups"},
+                                    label = "Управление группами",
+                                    leftSection = DashIconify(icon = "mingcute:group-line"),
+                                    active = False
+                                ),
                             ],
                         ),
                         dmc.Flex(
@@ -304,6 +310,12 @@ def layout():
                             id = {"type": "settings_page", "index": "competence"},
                             display = "none",
                             p = "sm",
+                        ),
+                        dmc.Box(
+                            children = [],
+                            id = {"type": "settings_page", "index": "groups"},
+                            display = "none",
+                            p = "sm",
                         )
                     ],
                 ),
@@ -326,23 +338,25 @@ def layout():
             "project": Output({"type": "settings_navlink", "index": "project"}, "active"),
             "users": Output({"type": "settings_navlink", "index": "users"}, "active"),
             "competence": Output({"type": "settings_navlink", "index": "competence"}, "active"),
+            "groups": Output({"type": "settings_navlink", "index": "groups"}, "active"),
         },
         "page_display": {
             "project": Output({"type": "settings_page", "index": "project"}, "display"),
             "users": Output({"type": "settings_page", "index": "users"}, "display"),
             "competence": Output({"type": "settings_page", "index": "competence"}, "display"),
+            "groups": Output({"type": "settings_page", "index": "groups"}, "display"),
         }
     },
     inputs = {
         "input": {
             "navlink_click": Input({"type": "settings_navlink", "index": ALL}, "n_clicks"),
+            "page_ids": Input({"type": "settings_pages", "index": ALL}, "id"),
         }
     },
     prevent_initial_call = True
 )
 def NavlinkClick(input):
-    project_data = json.loads(session["project_data"])
-    page_keys = ["project", "users", "competence"]
+    page_keys = [id["index"] for id in input["page_ids"]]
 
     navlink_selected = {}
     page_display = {}

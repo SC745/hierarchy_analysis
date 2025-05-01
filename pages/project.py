@@ -124,17 +124,15 @@ def layout():
                                             children = [
                                                 dmc.Stack(
                                                     children = [
-                                                        dmc.Text("Название"),
-                                                        dmc.Group(
+                                                        dmc.Flex(
                                                             children = [
-                                                                dmc.TextInput(id = "name_input", disabled = bool(project_data["status"]["stage"] > 1) or bool(project_data["role"]["access_level"] < 3)),
+                                                                dmc.TextInput(id = "name_input", label = "Название", disabled = bool(project_data["status"]["stage"] > 1) or bool(project_data["role"]["access_level"] < 3)),
                                                                 dmc.Checkbox(id = "node_checkbox", size = 36, checked = True)
                                                             ],
-                                                            justify = "space-around",
-                                                            grow=True,
-                                                            preventGrowOverflow=False,
-                                                            id = "node_info"
+                                                            gap = "md",
+                                                            align = "flex-end",
                                                         ),
+                                                        dmc.Button(id = "compdata_button", children = "Оценить", display = "block" if project_data["status"]["stage"] == 3 else "none")
                                                     ],
                                                     p = "md",
                                                     gap = 5
@@ -235,12 +233,57 @@ def layout():
                 ]),
             ],
             header={"height": "30px"},
-            navbar={"width": "15%"},
-            aside={"width": "15%"},
+            navbar={"width": "300px"},
+            aside={"width": "300px"},
         )
         layout = dmc.MantineProvider(layout)
         return layout
 
+
+
+#Навигация ----------------------------------------------------------------------------------------------------
+
+@dash.callback(
+    Output({"type": "redirect", "index": "project"}, "pathname", allow_duplicate = True),
+    Output("current_node_id", "data", allow_duplicate = True),
+    Input("project_list", "n_clicks"),
+    prevent_initial_call = True
+)
+def RedirectToProjects(clickdata):
+    SaveGraph(0)
+    if clickdata: return "/projects", None
+
+
+@dash.callback(
+    Output({"type": "redirect", "index": "project"}, "pathname", allow_duplicate = True),
+    Input("project_settings", "n_clicks"),
+    prevent_initial_call = True
+)
+def RedirectToSettings(clickdata):
+    SaveGraph(0)
+    if clickdata: return "/settings"
+
+
+@dash.callback(
+    Output({"type": "redirect", "index": "project"}, "pathname", allow_duplicate = True),
+    Input("compdata_button", "n_clicks"),
+    State("current_node_id", "data"),
+    prevent_initial_call = True
+)
+def RedirectToNodeCompEval(clickdata, current_node_id):
+    compdata = functions.GetUserCompdata(current_node_id, current_user.userdata["id"])
+    if len(compdata):
+        comp_eval = {}
+        comp_eval["compdata"] = compdata
+        comp_eval["cursor"] = 0
+        session["comp_eval"] = json.dumps(comp_eval, cls = functions.NpEncoder)
+
+        return "/compeval"
+    else: PreventUpdate
+
+
+
+#Граф и панель инструментов ----------------------------------------------------------------------------------------------------
 
 @dash.callback(
     output = {
@@ -497,26 +540,7 @@ def InitGraph(init):
     return element_data["elements"]
 
 
-@dash.callback(
-    Output({"type": "redirect", "index": "project"}, "pathname", allow_duplicate = True),
-    Output("current_node_id", "data", allow_duplicate = True),
-    Input("project_list", "n_clicks"),
-    prevent_initial_call = True
-)
-def RedirectToProjects(clickdata):
-    SaveGraph(0)
-    if clickdata: return "/projects", None
-
-
-@dash.callback(
-    Output({"type": "redirect", "index": "project"}, "pathname", allow_duplicate = True),
-    Input("project_settings", "n_clicks"),
-    prevent_initial_call = True
-)
-def RedirectToSettings(clickdata):
-    SaveGraph(0)
-    if clickdata: return "/settings"
-
+#Выпадающее меню ----------------------------------------------------------------------------------------------------
 
 @dash.callback(
     Output("current_node_id", "data", allow_duplicate = True),
