@@ -605,7 +605,7 @@ def DeleteUser(clickdata, user_login, role_code):
             "edge_competence_data": Output("edge_competence_data", "display"),
         },
         "value": {
-            "competence_select": Output("competence_select", "value"),
+            "competence_select": Output("competence_select", "value", allow_duplicate = True),
             "source_node_select": Output("source_node_select", "value"),
         },
         "message": Output("competence_type_message", "children")
@@ -655,7 +655,7 @@ def CompetenceTypeChoice(input):
 @dash.callback(
     Output("competence_select", "data"),
     Output("competence_select", "label"),
-    Output("competence_select", "value"),
+    Output("competence_select", "value", allow_duplicate = True),
     Input("group_checkbox", "checked"),
     prevent_initial_call = True
 )

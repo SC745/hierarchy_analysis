@@ -7,6 +7,7 @@ import numpy as np
 import json
 
 connection = psycopg2.connect(host='localhost', database='hierarchy', user='postgres', password='228228', port = 5432)
+#connection = psycopg2.connect(host='192.168.1.102', database='hierarchy', user='postgres', password='228228', port = 5432)
 cursor = connection.cursor()
 
 class NpEncoder(json.JSONEncoder):
