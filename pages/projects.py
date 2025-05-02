@@ -14,6 +14,18 @@ _dash_renderer._set_react_version("18.2.0")
 dash.register_page(__name__)
 
 def layout():
+    #Удаление ключей других страниц
+    #page_projects = session.pop("page_projects", None) 
+    page_project = session.pop("page_project", None)
+    page_settings = session.pop("page_settings", None)
+    page_compeval = session.pop("page_compeval", None)
+    page_analytics = session.pop("page_analytics", None)
+
+    #Очистка данных
+    project_data = session.pop("project_data", None)
+    element_data = session.pop("element_data", None)
+    comp_data = session.pop("comp_data", None)
+    
     if not current_user.is_authenticated:
         return dcc.Location(id = {"type": "unauthentificated", "index": "projects"}, pathname = "/login")
     else:
@@ -79,14 +91,12 @@ def layout():
 )
 def ProjectChoice(clickdata):
     trigger = {"id": ctx.triggered_id, "property": ctx.triggered[0]["prop_id"].split(".")[1], "value": ctx.triggered[0]["value"]}
-
     if not trigger["value"]: raise PreventUpdate
 
-    project_data = functions.GetProjectData(current_user.userdata["id"], ctx.triggered_id["index"])
-    element_data = functions.GetElementData(project_data, current_user.userdata["id"])
-
-    session["project_data"] = json.dumps(project_data, cls = functions.NpEncoder)
-    session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
+    page_project = {}
+    page_project["project_id"] = ctx.triggered_id["index"]
+    session["page_project"] = json.dumps(page_project, cls = functions.NpEncoder)
+    
 
     return "/project"
 

@@ -6,8 +6,8 @@ import psycopg2
 import numpy as np
 import json
 
-connection = psycopg2.connect(host='localhost', database='hierarchy', user='postgres', password='228228', port = 5432)
-#connection = psycopg2.connect(host='192.168.1.102', database='hierarchy', user='postgres', password='228228', port = 5432)
+#connection = psycopg2.connect(host='localhost', database='hierarchy', user='postgres', password='228228', port = 5432)
+connection = psycopg2.connect(host='192.168.1.102', database='hierarchy', user='postgres', password='228228', port = 5432)
 cursor = connection.cursor()
 
 class NpEncoder(json.JSONEncoder):
@@ -104,7 +104,7 @@ def GetMergedEdges(project_id):
             inner join tbl_userdata on tbl_userdata.user_id = tbl_edgedata.user_id
             inner join tbl_edges on tbl_edges.id = tbl_edgedata.edge_id
             where
-            tbl_userdata.project_id = {project_id} and
+            tbl_edges.project_id = {project_id} and
             tbl_userdata.de_completed = true
             group by uuid
         ) as rated_edges
@@ -133,25 +133,37 @@ def GetProjectDfs(project_data, user_id):
     nodes_df = GetNodes(project_data["id"])
     edges_df = GetProjectEdges(project_data, user_id)
 
-    nodes_df, edges_df = ExcludeDeletedElements(nodes_df, edges_df, project_data)
+    nodes_df, edges_df = ExcludeDeletedElements(nodes_df, edges_df, project_data, "delete")
     nodes_df = GetNodeLevels(nodes_df, edges_df)
 
     return nodes_df, edges_df
 
 #Очистить датафреймы вершин и ребер от удаленных элементов
-def ExcludeDeletedElements(nodes_df, edges_df, project_data):
+def ExcludeDeletedElements(nodes_df, edges_df, project_data, type):
     if len(nodes_df):
         head_id = nodes_df.loc[~nodes_df["id"].isin(edges_df["target"])].iloc[0]["id"]
 
-        if project_data["status"]["code"] == "dep_eval":
-            edges_df.drop(edges_df.loc[edges_df["deleted"] == True].index, inplace = True)
-        if project_data["status"]["code"] in ["comp_eval", "completed"]:
-            if project_data["merge_coef"] > 0:
-                edges_df.drop(edges_df.loc[edges_df["merge_coef"] < project_data["merge_coef"]].index, inplace = True)
-            else: 
-                edges_df.drop(edges_df.loc[edges_df["merge_coef"] == project_data["merge_coef"]].index, inplace = True)
+        if type == "highlight":
+            nodes_df["classes"] = "default"
+            edges_df["classes"] = "default"
 
-        nodes_df.drop(nodes_df.loc[~nodes_df["id"].isin(edges_df["target"]) & (nodes_df["id"] != head_id)].index, inplace = True)
+            if project_data["status"]["code"] == "dep_eval": edges_df.loc[edges_df["deleted"] == True, "classes"] = "deleted"
+
+            if project_data["status"]["code"] in ["comp_eval", "completed"]:
+                if project_data["merge_coef"] > 0: edges_df.loc[edges_df["merge_coef"] < project_data["merge_coef"], "classes"] = "deleted"
+                else: edges_df.loc[edges_df["merge_coef"] == project_data["merge_coef"], "classes"] = "deleted"
+
+            nodes_df.loc[~nodes_df["id"].isin(edges_df["target"]) & (nodes_df["id"] != head_id), "classes"] = "deleted"
+
+        if type == "delete":
+            if project_data["status"]["code"] == "dep_eval": edges_df.drop(edges_df.loc[edges_df["deleted"] == True].index, inplace = True)
+
+            if project_data["status"]["code"] in ["comp_eval", "completed"]:
+                if project_data["merge_coef"] > 0: edges_df.drop(edges_df.loc[edges_df["merge_coef"] < project_data["merge_coef"]].index, inplace = True)
+                else: edges_df.drop(edges_df.loc[edges_df["merge_coef"] == project_data["merge_coef"]].index, inplace = True)
+
+            nodes_df.drop(nodes_df.loc[~nodes_df["id"].isin(edges_df["target"]) & (nodes_df["id"] != head_id)].index, inplace = True)
+
 
     return nodes_df, edges_df
 
@@ -201,7 +213,9 @@ def GetHierarchyPreset(nodes_df, edges_df):
                 node_object = {}
                 node_object["data"] = node_data
                 node_object["position"] = node_position
-                node_object["classes"] = "default"
+
+                if "classes" in row: node_object["classes"] = row["classes"]
+                else: node_object["classes"] = "default"
 
                 node_list.append(node_object)
 
@@ -259,6 +273,20 @@ def ColorElements(element_data):
             continue
         
         element["classes"] = "default"
+
+#Покрасить элементы
+def ColorAnalyticsElements(element_data, cons_coef):
+    for element in element_data["elements"]:
+        if element_data["selected"] and element_data["selected"]["data"]["id"] == element["data"]["id"]: 
+            element["classes"] = "selected"
+            continue
+
+        if element["data"]["cons_coef"] > cons_coef: 
+            element["classes"] = "bad"
+            continue
+        else:
+            element["classes"] = "good"
+            continue
 
 #Получить ширину текста в пикселях
 def GetTextWidth(font, line):
@@ -831,9 +859,10 @@ def InsertNewProject(user_login):
 
 #Страница настроек ----------------------------------------------------------------------------------------------------
 
-#Получить пользователей, участвующих в проекте
+#Получить пользователей, учавствующих в проекте
 def GetProjectUserdata(project_id):
     query = f"""select
+        tbl_userdata.id,
         login,
         user_name,
         role_name,
@@ -847,7 +876,7 @@ def GetProjectUserdata(project_id):
         order by user_name"""
     
     cursor.execute(query)
-    userdata = pd.DataFrame(cursor.fetchall(), columns = ["login", "name", "role", "access_level", "de_completed", "ce_completed"])
+    userdata = pd.DataFrame(cursor.fetchall(), columns = ["id", "login", "name", "role", "access_level", "de_completed", "ce_completed"])
 
     return userdata
 
@@ -860,7 +889,7 @@ def GetTaskTableData(project_id):
     table_data["de_completed"] = [dmc.Checkbox(disabled = True, checked = row["de_completed"]) for index, row in table_data.iterrows()]
     table_data["ce_completed"] = [dmc.Checkbox(disabled = True, checked = row["ce_completed"]) for index, row in table_data.iterrows()]
 
-    table_data.drop(["role", "access_level", "login"], axis = 1, inplace = True)
+    table_data.drop(["role", "access_level", "login", "id"], axis = 1, inplace = True)
     table_data = table_data.to_dict("records")
 
     return table_data
@@ -871,7 +900,7 @@ def GetUserTableData(project_id, access_level):
 
     table_data["delete"] = [dmc.Button(id = {"type": "delete_button", "index": row["login"]}, children = "Удалить", color = "red", disabled = bool(row["access_level"] >= access_level)) for index, row in table_data.iterrows()]
 
-    table_data.drop(["de_completed", "ce_completed", "access_level", "login"], axis = 1, inplace = True)
+    table_data.drop(["de_completed", "ce_completed", "access_level", "login", "id"], axis = 1, inplace = True)
     table_data = table_data.to_dict("records")
 
     return table_data
@@ -1345,6 +1374,59 @@ def RemoveCompletedState(project_data):
 
 
 
+#Страница аналитики ----------------------------------------------------------------------------------------------------
+
+def GetAnalyticsTreeData(project_id, use_groups):
+    if use_groups:
+        query = f"""select group_name, tbl_groups.id, user_name, tbl_users.id
+            from tbl_groups
+            inner join tbl_groupdata on tbl_groupdata.group_id = tbl_groups.id
+            inner join tbl_userdata on tbl_userdata.user_id = tbl_groupdata.user_id
+            inner join tbl_users on tbl_userdata.user_id = tbl_users.id
+            where tbl_userdata.project_id = {project_id} and tbl_userdata.ce_completed = true
+            order by group_name, user_name"""
+    else:
+        query = f"""select user_name, tbl_users.id
+            from tbl_users
+            inner join tbl_userdata on tbl_userdata.user_id = tbl_users.id
+            inner join tbl_roles on tbl_userdata.role_id = tbl_roles.id
+            where tbl_userdata.project_id = {project_id} and 
+            tbl_userdata.de_completed = true and
+            access_level > 1
+            order by user_name"""
+        
+        cursor.execute(query)
+        treedata = pd.DataFrame(cursor.fetchall(), columns = ["value", "label"])
+
+#Получить элементы дерева проекта
+def GetProjectTreeData(project_id, use_groups):
+    if use_groups:
+        #userdata.drop(["id", "login", "name", "role", "access_level", "de_completed", "ce_completed"], axis = 1, inplace = True)
+        a = 0
+    else:
+        userdata = GetProjectUserdata(project_id)
+        userdata.drop(userdata[(userdata["de_completed"] == False) | (userdata["role"] == "spectator")].index, inplace = True)
+        userdata.drop(["login", "role", "access_level", "de_completed", "ce_completed"], axis = 1, inplace = True)
+        userdata = userdata.to_dict("records")
+
+        user_elements = []
+        for user in userdata:
+            element = {}
+            element["label"] = GetShortUsername(user["name"])
+            element["value"] = f"project/user/{user['id']}"
+            user_elements.append(element)
+
+        data = [
+            {
+                "value": "project",
+                "label": "Проект",
+                "children": user_elements
+            }
+        ]
+    
+    return data
+
+
 #Служебные функции ----------------------------------------------------------------------------------------------------
 
 #Создает датафреймы вершин и ребер на основе словаря элементов
@@ -1412,6 +1494,41 @@ def GetElementData(project_data, user_id):
     element_data["elements"] = elements
     element_data["state"] = state
     element_data["steps"] = steps
+
+    return element_data
+
+#Получить первоначальную информацию об элементах иерархии на странице "Аналитика"
+def GetAnalyticsGraphElementData(project_data, item_type, item_id, status_code):
+    if status_code == "dep_eval":
+        if item_type == "user":
+            nodes_df = GetNodes(project_data["id"])
+            edges_df = GetEdgedata(project_data["id"], item_id)
+
+            project_data["status"]["code"] == status_code
+            nodes_df, edges_df = ExcludeDeletedElements(nodes_df, edges_df, project_data, "highlight")
+            nodes_df = GetNodeLevels(nodes_df, edges_df)
+
+            elements = GetHierarchyPreset(nodes_df, edges_df)
+
+        if item_type == "project":
+            #item_id должно быть None
+            elements = GetHierarchyPreset(*GetProjectDfs(project_data, item_id))
+
+    if status_code == "comp_eval":
+        if item_type == "user": 
+            a = 0
+            #Вывести граф с весами и отношением согласованности для конкретного пользователя
+        if item_type == "group":
+            a = 0
+            #Вывести граф с весами и отношением согласованности для группы пользователей (состав tbl_groupdata)
+        if item_type == "project":
+            a = 0
+            #Вывести граф с весами и отношением согласованности для всего проекта (состав tbl_userdata inner join tbl_roles где "access_level > 1" по проекту)
+
+    element_data = {}
+    element_data["elements"] = elements
+    element_data["selected"] = None
+
 
     return element_data
 
@@ -1487,9 +1604,6 @@ def GetSelectData(select_id, project_id = 0, group_checked = False):
 def MakeSimpleGrid(superiority_data):
     source_node_name = superiority_data[0]["source_node_name"]
     superiority_data = pd.DataFrame(superiority_data)
-    targret_node_names = list(superiority_data["t1_node_name"]) + list(superiority_data["t2_node_name"])
-    targret_node_names = set(targret_node_names)
-    targret_node_names = list(targret_node_names)
     targret_node_names = list(set(list(superiority_data["t1_node_name"]) + list(superiority_data["t2_node_name"])))
     superiority_data = superiority_data.to_dict("records")
 
@@ -1497,22 +1611,28 @@ def MakeSimpleGrid(superiority_data):
     matrix_dim = len(targret_node_names)
 
     simple_grid_children = [0] * pow(matrix_dim + 1, 2)
-    simple_grid_children[0] = dmc.Box(source_node_name)
+    simple_grid_children[0] = dmc.Center(dmc.Text(source_node_name, className='hi-cell-caption'), className="hi-cell-root") #корень 
+    #dmc.Box(source_node_name) #корень
     for index, targret_node_name in enumerate(targret_node_names): 
-        simple_grid_children[index + 1] = dmc.Box(targret_node_name)
-        simple_grid_children[(matrix_dim + 2) * (index + 1)] = dmc.Box("1")
-        simple_grid_children[(matrix_dim + 1) * (index + 1)] = dmc.Box(targret_node_name)
+        simple_grid_children[index + 1] = dmc.Box(dmc.Text(targret_node_name, className='hi-cell-caption'), className="hi-cell-up") #верхние 
+        #dmc.Box(targret_node_name) #верхние
+        simple_grid_children[(matrix_dim + 2) * (index + 1)] = dmc.Center(dmc.Text("1"), className="hi-cell-ro") #диагональ
+        #dmc.Box("1") #диагональ
+        simple_grid_children[(matrix_dim + 1) * (index + 1)] = dmc.Box(dmc.Text(targret_node_name, className='hi-cell-caption'), className="hi-cell-left") #слева
+        #dmc.Box(targret_node_name) #слева
 
     list_index = matrix_dim + 3
     for index, superiority_data_item in enumerate(superiority_data):
+        opp_index = list_index + (index % 2 + 1) * matrix_dim
+        print(index, list_index, opp_index)
         if superiority_data_item["superior"]: 
-            simple_grid_children[list_index] = dmc.Box(id = {"type": "upper_node", "index": superiority_data_item["table_id"]}, children = str(superiority_data_item["code"]))
-            simple_grid_children[list_index + (index % 2 + 1) * matrix_dim] = dmc.Box(id = {"type": "lower_node", "index": superiority_data_item["table_id"]}, children = "1/" + str(superiority_data_item["code"]) if str(superiority_data_item["code"]) != "1" else "1")
+            simple_grid_children[list_index] = dmc.Box(dmc.Button(id = {"type": "upper_node", "index": superiority_data_item["table_id"]}, children = str(superiority_data_item["code"]), radius=0, className="hi-cell-btn"), className="hi-cell")
+            simple_grid_children[opp_index] = dmc.Box(dmc.Button(id = {"type": "lower_node", "index": superiority_data_item["table_id"]}, children = "1/" + str(superiority_data_item["code"]) if str(superiority_data_item["code"]) != "1" else "1", radius=0, className="hi-cell-btn"), className="hi-cell")
         else:
-            simple_grid_children[list_index] = dmc.Box(id = {"type": "upper_node", "index": superiority_data_item["table_id"]}, children = "1/" + str(superiority_data_item["code"]) if str(superiority_data_item["code"]) != "1" else "1")
-            simple_grid_children[list_index + (index % 2 + 1) * matrix_dim] = dmc.Box(id = {"type": "lower_node", "index": superiority_data_item["table_id"]}, children = str(superiority_data_item["code"]))
+            simple_grid_children[list_index] = dmc.Box(dmc.Button(id = {"type": "upper_node", "index": superiority_data_item["table_id"]}, children = "1/" + str(superiority_data_item["code"]) if str(superiority_data_item["code"]) != "1" else "1", radius=0, className="hi-cell-btn"), className="hi-cell")
+            simple_grid_children[opp_index] = dmc.Box(dmc.Button(id = {"type": "lower_node", "index": superiority_data_item["table_id"]}, children = str(superiority_data_item["code"]), radius=0, className="hi-cell-btn"), className="hi-cell")
 
-        if list_index % (matrix_dim + 1) == 0: list_index += 1
+        if list_index % (matrix_dim + 1) != 0: list_index += 1
         else: list_index += matrix_dim - 1
 
-    return dmc.SimpleGrid(cols = matrix_dim + 1, spacing = 0, verticalSpacing = 0, children = simple_grid_children)
+    return dmc.SimpleGrid(cols = matrix_dim + 1, spacing = '0', verticalSpacing = '0', children = simple_grid_children)

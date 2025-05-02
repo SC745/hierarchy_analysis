@@ -15,18 +15,37 @@ _dash_renderer._set_react_version("18.2.0")
 dash.register_page(__name__)
 
 def layout():
+    #Удаление ключей других страниц
+    page_projects = session.pop("page_projects", None) 
+    page_project = session.pop("page_project", None)
+    page_settings = session.pop("page_settings", None)
+    #page_compeval = session.pop("page_compeval", None)
+    page_analytics = session.pop("page_analytics", None)
+
+    #Очистка данных
+    project_data = session.pop("project_data", None)
+    element_data = session.pop("element_data", None)
+    comp_data = session.pop("comp_data", None)
+
     if not current_user.is_authenticated:
         return dcc.Location(id = {"type": "unauthentificated", "index": "compeval"}, pathname = "/login")
-    elif not "comp_eval" in session:
+    elif not "page_compeval" in session:
         return dcc.Location(id = {"type": "redirect", "index": "compeval"}, pathname = "/project")
     else:
-        comp_eval = json.loads(session["comp_eval"])
+        page_compeval = json.loads(session["page_compeval"])
+        comp_data = functions.GetUserCompdata(page_compeval["current_node_id"], current_user.userdata["id"])
+        
+        if len(comp_data)==0:
+            return dcc.Location(id = {"type": "redirect", "index": "compeval"}, pathname = "/project")
+        else:
+            
+            session["comp_data"] = json.dumps(comp_data, cls = functions.NpEncoder)
 
-        layout = dmc.Box(
-            children = [
-                functions.MakeSimpleGrid(comp_eval["compdata"])
-            ]
-        )
-
-        layout = dmc.MantineProvider(layout)
-        return layout
+            layout = dmc.Box(
+                children=[
+                dmc.Center(
+                    functions.MakeSimpleGrid(comp_data)
+                    )
+                    ])
+            layout = dmc.MantineProvider(layout)
+            return layout

@@ -58,11 +58,30 @@ def GetMergemethod(merge_coef):
 
 
 def layout():
-    if not current_user.is_authenticated: return dcc.Location(id = {"type": "unauthentificated", "index": "settings"}, pathname = "/login")
-    else:
-        project_data = json.loads(session["project_data"])
+    #Удаление ключей других страниц
+    page_projects = session.pop("page_projects", None) 
+    page_project = session.pop("page_project", None)
+    #page_settings = session.pop("page_settings", None)
+    page_compeval = session.pop("page_compeval", None)
+    page_analytics = session.pop("page_analytics", None)
 
-        if project_data["role"]["access_level"] < 3: return dcc.Location(id = {"type": "access_denied", "index": "settings"}, pathname = "/project")
+    #Очистка данных
+    project_data = session.pop("project_data", None)
+    element_data = session.pop("element_data", None)
+    comp_data = session.pop("comp_data", None)
+    
+    if not current_user.is_authenticated: 
+        return dcc.Location(id = {"type": "unauthentificated", "index": "settings"}, pathname = "/login")
+    elif not "page_settings" in session:
+        return dcc.Location(id = {"type": "redirect", "index": "project"}, pathname = "/project")
+    else:
+        page_settings = json.loads(session["page_settings"])
+        project_data = functions.GetProjectData(current_user.userdata["id"], page_settings["project_id"])
+        #project_data = json.loads(session["project_data"])
+        if project_data["role"]["access_level"] < 3: 
+            return dcc.Location(id = {"type": "access_denied", "index": "settings"}, pathname = "/project")
+        
+        session["project_data"] = json.dumps(project_data, cls = functions.NpEncoder)
 
         layout = dmc.AppShell(
             children = [
@@ -118,20 +137,13 @@ def layout():
                                     leftSection = DashIconify(icon = "mingcute:group-line"),
                                     active = False
                                 ),
-                            ],
-                        ),
-                        dmc.Flex(
-                            children = [
-                                dmc.Divider(),
                                 dmc.NavLink(
-                                    id = "to_project",
+                                    id = "settings_to_project",
                                     label = "Вернуться к проекту",
                                     leftSection = DashIconify(icon = "mingcute:arrow-left-line"),
                                 ),
                             ],
-                            align = "flex-end",
-                            direction = "column"
-                        )
+                        ),
                     ]
                 ),
                 dmc.AppShellMain(
@@ -350,7 +362,7 @@ def layout():
     inputs = {
         "input": {
             "navlink_click": Input({"type": "settings_navlink", "index": ALL}, "n_clicks"),
-            "page_ids": Input({"type": "settings_pages", "index": ALL}, "id"),
+            "page_ids": Input({"type": "settings_page", "index": ALL}, "id"),
         }
     },
     prevent_initial_call = True
@@ -377,16 +389,19 @@ def NavlinkClick(input):
 
 @dash.callback(
     Output({"type": "redirect", "index": "settings"}, "pathname", allow_duplicate = True),
-    Input("to_project", "n_clicks"),
+    Input("settings_to_project", "n_clicks"),
     prevent_initial_call = True
 )
 def RedirectToProject(clickdata):
-    project_data = json.loads(session["project_data"])
-
-    element_data = functions.GetElementData(project_data, current_user.userdata["id"])
-    session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
-
-    if clickdata: return "/project"
+    if clickdata is None:
+        raise PreventUpdate
+    else:
+        page_settings = json.loads(session["page_settings"])
+        page_project = {}
+        page_project["project_id"] = page_settings["project_id"]
+        session["page_project"] = json.dumps(page_project, cls = functions.NpEncoder)
+    
+        return "/project"
 
 
 

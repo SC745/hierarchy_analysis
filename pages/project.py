@@ -39,10 +39,32 @@ def GetEdgeCheckboxes(source_node, element_data, project_data):
     return edge_checkboxes
 
 def layout():
+    #Удаление ключей других страниц
+    page_projects = session.pop("page_projects", None) 
+    #page_project = session.pop("page_project", None)
+    page_settings = session.pop("page_settings", None)
+    page_compeval = session.pop("page_compeval", None)
+    page_analytics = session.pop("page_analytics", None)
+
+    #Очистка данных
+    project_data = session.pop("project_data", None)
+    element_data = session.pop("element_data", None)
+    comp_data = session.pop("comp_data", None)
+
     if not current_user.is_authenticated:
         return dcc.Location(id = {"type": "unauthentificated", "index": "project"}, pathname = "/login")
+    elif not "page_project" in session:
+        return dcc.Location(id = {"type": "redirect", "index": "project"}, pathname = "/projects")
     else:
-        project_data = json.loads(session["project_data"])
+        page_project = json.loads(session["page_project"])
+
+        project_data = functions.GetProjectData(current_user.userdata["id"], page_project["project_id"])
+        element_data = functions.GetElementData(project_data, current_user.userdata["id"])
+        
+        session["project_data"] = json.dumps(project_data, cls = functions.NpEncoder)
+        session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
+
+        #project_data = json.loads(session["project_data"])
 
         layout = dmc.AppShell(
             children = [
@@ -53,21 +75,37 @@ def layout():
                                 dcc.Location(id = {"type": "redirect", "index": "project"}, pathname = "/project"),
                                 dcc.Store(id = {"type": "init_store", "index": "project"}, storage_type = "memory"),
                                 dcc.Store(id = "prev_action", storage_type = "memory", data = False),
-                                dmc.Menu(
+                                dmc.Flex(
                                     children = [
-                                        dmc.MenuTarget(dmc.Text("Проект")),
-                                        dmc.MenuDropdown(
+                                        dmc.Menu(
                                             children = [
-                                                dmc.MenuItem(id = "project_settings", leftSection = DashIconify(icon = "mingcute:settings-3-line"), children = "Настройки"),
-                                                dmc.MenuItem(id = "restore_initial_hierarchy", leftSection = DashIconify(icon = "mingcute:refresh-3-fill"), children = "Восстановить базовую иерархию"),
-                                                dmc.MenuItem(children = dmc.Checkbox(id = {"type": "stage_completed", "index": "de_completed"}, label = "Оценка зависимостей завершена", checked = project_data["completed"]["de_completed"]), disabled = project_data["status"]["stage"] != 2 or project_data["role"]["access_level"] < 2),
-                                                dmc.MenuItem(children = dmc.Checkbox(id = {"type": "stage_completed", "index": "ce_completed"}, label = "Сравнительная оценка завершена", checked = project_data["completed"]["ce_completed"]), disabled = project_data["status"]["stage"] != 3 or project_data["role"]["access_level"] < 2),
-                                                dmc.MenuDivider(),
-                                                dmc.MenuItem(id = "project_list", leftSection = DashIconify(icon = "mingcute:list-check-fill"), children = "Список проектов")
-                                            ]
-                                        )
+                                                dmc.MenuTarget(dmc.Text("Проект")),
+                                                dmc.MenuDropdown(
+                                                    children = [
+                                                        dmc.MenuItem(id = {"type":"menu_navlink", "index":"/settings"}, leftSection = DashIconify(icon = "mingcute:settings-3-line"), children = "Настройки"),
+                                                        dmc.MenuItem(id = {"type":"menu_navlink", "index":"/analytics"}, leftSection = DashIconify(icon = "mingcute:chart-line-fill"), children = "Аналитика", disabled = project_data["status"]["stage"] < 3),
+                                                        dmc.MenuItem(id = "restore_initial_hierarchy", leftSection = DashIconify(icon = "mingcute:refresh-3-fill"), children = "Восстановить базовую иерархию"),
+                                                        dmc.MenuDivider(),
+                                                        dmc.MenuItem(id = {"type":"menu_navlink", "index":"/projects"}, leftSection = DashIconify(icon = "mingcute:list-check-fill"), children = "Список проектов")
+                                                    ]
+                                                )
+                                            ],
+                                            trigger="hover",
+                                        ),
+                                        dmc.Menu(
+                                            children = [
+                                                dmc.MenuTarget(dmc.Text("Состояние")),
+                                                dmc.MenuDropdown(
+                                                    children = [
+                                                        dmc.MenuItem(children = dmc.Checkbox(id = {"type": "stage_completed", "index": "de_completed"}, label = "Оценка зависимостей завершена", checked = project_data["completed"]["de_completed"], disabled = project_data["status"]["stage"] != 2 or project_data["role"]["access_level"] < 2), disabled = project_data["status"]["stage"] != 2 or project_data["role"]["access_level"] < 2),
+                                                        dmc.MenuItem(children = dmc.Checkbox(id = {"type": "stage_completed", "index": "ce_completed"}, label = "Сравнительная оценка завершена", checked = project_data["completed"]["ce_completed"], disabled = project_data["status"]["stage"] != 3 or project_data["role"]["access_level"] < 2), disabled = project_data["status"]["stage"] != 3 or project_data["role"]["access_level"] < 2),
+                                                    ]
+                                                )
+                                            ],
+                                            trigger="hover",
+                                        ),
                                     ],
-                                    trigger="hover",
+                                    gap = "md",
                                 ),
                                 dmc.Text(project_data["name"] + " (" + project_data["status"]["name"] + ")"),
                                 dmc.Menu(
@@ -246,22 +284,26 @@ def layout():
 @dash.callback(
     Output({"type": "redirect", "index": "project"}, "pathname", allow_duplicate = True),
     Output("current_node_id", "data", allow_duplicate = True),
-    Input("project_list", "n_clicks"),
+    Input({"type": "menu_navlink", "index": ALL}, "n_clicks"),
+    State("current_node_id", "data"),
     prevent_initial_call = True
 )
-def RedirectToProjects(clickdata):
-    SaveGraph(0)
-    if clickdata: return "/projects", None
+def RedirectMenuItems(clickdata, current_node_id):
+    if ctx.triggered_id["index"] == "/settings":
+        SaveGraph(0)
+        page_project = json.loads(session["page_project"])
+        page_settings = {}
+        page_settings["project_id"] = page_project["project_id"]
+        session["page_settings"] = json.dumps(page_settings, cls = functions.NpEncoder)
 
+    elif ctx.triggered_id["index"] == "/analytics":
+        SaveGraph(0)
+        page_project = json.loads(session["page_project"])
+        page_analytics = {}
+        page_analytics["project_id"] = page_project["project_id"]
+        session["page_analytics"] = json.dumps(page_analytics, cls = functions.NpEncoder)
 
-@dash.callback(
-    Output({"type": "redirect", "index": "project"}, "pathname", allow_duplicate = True),
-    Input("project_settings", "n_clicks"),
-    prevent_initial_call = True
-)
-def RedirectToSettings(clickdata):
-    SaveGraph(0)
-    if clickdata: return "/settings"
+    return ctx.triggered_id["index"], None
 
 
 @dash.callback(
@@ -271,15 +313,14 @@ def RedirectToSettings(clickdata):
     prevent_initial_call = True
 )
 def RedirectToNodeCompEval(clickdata, current_node_id):
-    compdata = functions.GetUserCompdata(current_node_id, current_user.userdata["id"])
-    if len(compdata):
-        comp_eval = {}
-        comp_eval["compdata"] = compdata
-        comp_eval["cursor"] = 0
-        session["comp_eval"] = json.dumps(comp_eval, cls = functions.NpEncoder)
-
+    if clickdata is None:
+        raise PreventUpdate
+    else:
+        page_compeval = {}
+        page_compeval["current_node_id"] = current_node_id
+        page_compeval["cursor"] = 0
+        session["page_compeval"] = json.dumps(page_compeval, cls = functions.NpEncoder)
         return "/compeval"
-    else: PreventUpdate
 
 
 
@@ -299,6 +340,7 @@ def RedirectToNodeCompEval(clickdata, current_node_id):
         "input": {
             "tapNodeData": Input("graph", "tapNodeData"),
             "tapEdgeData": Input("graph", "tapEdgeData"),
+            "current_node_id": Input("current_node_id", "data"),
         }
     },
     prevent_initial_call = True
@@ -313,12 +355,16 @@ def SelectElement(input):
     if trigger["property"] == "tapNodeData":
         current_node = functions.GetElementById(input["tapNodeData"]["id"], element_data["elements"])
         element_data["state"]["selected"] = current_node
-    else:
+    elif trigger["property"] == "tapNodeData":
         current_node = functions.GetElementById(input["tapEdgeData"]["source"], element_data["elements"])
         element_data["state"]["selected"] = functions.GetElementById(input["tapEdgeData"]["id"], element_data["elements"])
+    else:
+        current_node = functions.GetElementById(input["current_node_id"], element_data["elements"])
 
     functions.ColorElements(element_data)
     session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
+
+    if not current_node: raise PreventUpdate
 
     output = {}
     output["current_node_id"] = current_node["data"]["id"]
@@ -489,7 +535,7 @@ def SaveGraph(clickdata):
         "addnode_disabled": Output("add_node", "disabled"),
         "save_graph": Output("save_graph", "disabled"),
         "hierarchyrestore_disabled": Output("restore_initial_hierarchy", "disabled"),
-        "projectsettings_disabled": Output("project_settings", "disabled"),
+        "projectsettings_disabled": Output({"type":"menu_navlink", "index":"/settings"}, "disabled"),
     },
     inputs = {
         "input": {

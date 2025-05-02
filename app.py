@@ -83,8 +83,8 @@ def Login(input):
 def Logout(clickdata):
     if clickdata:
         
-        project_data = json.loads(session["project_data"])
         if ctx.triggered_id["index"] == "project":
+            project_data = json.loads(session["project_data"])
             element_data = json.loads(session["element_data"])
             if project_data["status"]["stage"] == 1 and project_data["role"]["access_level"] > 2: functions.SaveInitialGraphToDB(element_data, project_data["id"])
             if project_data["status"]["stage"] == 2 and project_data["role"]["access_level"] > 1: functions.SaveEdgedataToDB(element_data, project_data["id"], current_user.userdata["id"])

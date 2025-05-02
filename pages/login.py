@@ -2,12 +2,25 @@ import dash
 import dash_mantine_components as dmc
 from dash import _dash_renderer, dcc
 from flask_login import current_user
+from flask import session
 
 _dash_renderer._set_react_version("18.2.0")
 dash.register_page(__name__)
 
 
 def layout():
+    #Удаление ключей других страниц
+    page_projects = session.pop("page_projects", None) 
+    page_project = session.pop("page_project", None)
+    page_settings = session.pop("page_settings", None)
+    page_compeval = session.pop("page_compeval", None)
+    page_analytics = session.pop("page_analytics", None)
+
+    #Очистка данных
+    project_data = session.pop("project_data", None)
+    element_data = session.pop("element_data", None)
+    comp_data = session.pop("comp_data", None)
+
     if current_user.is_authenticated:
         return  dcc.Location(id = {"type": "redirect", "index": "projects"}, pathname = "/projects")
     else:
