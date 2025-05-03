@@ -6,7 +6,7 @@ from dash.exceptions import PreventUpdate
 import dash_cytoscape as cyto
 
 from flask import session
-from flask_login import current_user
+from flask_login import current_user, logout_user
 
 import functions
 import json
@@ -268,6 +268,18 @@ def layout():
 
 
 #Навигация ----------------------------------------------------------------------------------------------------
+
+@dash.callback(
+    Output({"type": "redirect", "index": "analytics"}, "pathname", allow_duplicate = True),
+    Input({"type": "logout_button", "index": "analytics"}, "n_clicks"),
+    prevent_initial_call = True
+)
+def Logout(clickdata):
+    if clickdata:
+        session.clear()
+        logout_user()
+        return "/login"
+    
 
 @dash.callback(
     output = {

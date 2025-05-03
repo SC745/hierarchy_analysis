@@ -429,7 +429,7 @@ def SelectElement(input, project_data_store, element_data_store):
 
     if not current_node: raise PreventUpdate
 
-    if trigger["property"] == "tapNodeData":
+    if trigger["property"] == "tapNodeData" or trigger["id"] == "current_node_id":
         element_data["state"]["selected"] = current_node
     elif trigger["property"] == "tapEdgeData":
         element_data["state"]["selected"] = functions.GetElementById(input["tapEdgeData"]["id"], element_data["elements"])

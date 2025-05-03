@@ -1,20 +1,16 @@
 import dash
-from dash import Dash, html, dcc, ctx, Input, Output, State, MATCH
 import dash_mantine_components as dmc
 from dash import _dash_renderer
 import functions
 
-from dash.exceptions import PreventUpdate
 import os
-from flask import Flask, request, redirect, session
-from flask_login import login_user, LoginManager, UserMixin, logout_user, current_user
+from flask import Flask
+from flask_login import LoginManager
 
 
 _dash_renderer._set_react_version("18.2.0")
 
 server = Flask(__name__)
-
-
 
 app = dash.Dash(
     server=server,
@@ -33,44 +29,10 @@ login_manager = LoginManager()
 login_manager.init_app(server)
 login_manager.login_view = "/login"
 
-class User(UserMixin):
-    def __init__(self, username):
-        self.id = username
-        self.userdata = functions.GetUserData(username)
 
 @login_manager.user_loader
 def load_user(username):
-    return User(username)
-
-
-@dash.callback(
-    output = {
-        "redirect_trigger": Output({"type": "redirect", "index": "login"}, "pathname"),
-        "error_state": Output("error_message", "display"),
-    },
-    inputs = {
-        "input": {
-            "clickdata": Input("login_button", "n_clicks"),
-            "login": State("login_input", "value"),
-            "password": State("password_input", "value")
-        }
-    },
-    prevent_initial_call = True
-)
-def Login(input):
-    if not input["clickdata"]: raise PreventUpdate
-    successful_login = functions.CheckUserCredentials(input["login"], input["password"])
-
-    output = {}
-    if successful_login:
-        login_user(User(input["login"]))
-        output["redirect_trigger"] = "/projects"
-        output["error_state"] = "none"
-    else:
-        output["redirect_trigger"] = "/login"
-        output["error_state"] = "block"
-        
-    return output
+    return functions.User(username)
 
 
 if __name__ == '__main__':

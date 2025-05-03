@@ -5,10 +5,16 @@ import uuid
 import psycopg2
 import numpy as np
 import json
+from flask_login import UserMixin
 
 #connection = psycopg2.connect(host='localhost', database='hierarchy', user='postgres', password='228228', port = 5432)
 connection = psycopg2.connect(host='192.168.1.102', database='hierarchy', user='postgres', password='228228', port = 5432)
 cursor = connection.cursor()
+
+class User(UserMixin):
+    def __init__(self, username):
+        self.id = username
+        self.userdata = GetUserData(username)
 
 class NpEncoder(json.JSONEncoder):
     def default(self, obj):
