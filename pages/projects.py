@@ -6,7 +6,7 @@ from dash.exceptions import PreventUpdate
 import functions
 
 from flask import session
-from flask_login import current_user
+from flask_login import current_user, logout_user
 import json
 
 
@@ -20,22 +20,20 @@ def layout():
     page_settings = session.pop("page_settings", None)
     page_compeval = session.pop("page_compeval", None)
     page_analytics = session.pop("page_analytics", None)
-
-    #Очистка данных
-    project_data = session.pop("project_data", None)
-    element_data = session.pop("element_data", None)
-    comp_data = session.pop("comp_data", None)
     
     if not current_user.is_authenticated:
         return dcc.Location(id = {"type": "unauthentificated", "index": "projects"}, pathname = "/login")
     else:
         layout = dmc.AppShell(
             children = [
+                dcc.Location(id = {"type": "redirect", "index": "projects"}, pathname = "/projects"),
+                dcc.Store(id="project_data_store", storage_type='session', clear_data=True),
+                dcc.Store(id="element_data_store", storage_type='session', clear_data=True),
+                dcc.Store(id="comp_data_store", storage_type='session', clear_data=True),
                 dmc.AppShellHeader(
                     children = [
                         dmc.Box(
                             children = [
-                                dcc.Location(id = {"type": "redirect", "index": "projects"}, pathname = "/projects"),
                                 dmc.Menu(
                                     children = [
                                         dmc.MenuTarget(dmc.Text(functions.GetShortUsername(current_user.userdata["name"]))),
@@ -84,6 +82,20 @@ def layout():
         layout = dmc.MantineProvider(layout)
         return layout
 
+
+@dash.callback(
+    Output({"type": "redirect", "index": "projects"}, "pathname", allow_duplicate = True),
+    Input({"type": "logout_button", "index": "projects"}, "n_clicks"),
+    prevent_initial_call = True
+)
+def Logout(clickdata):
+    if clickdata:
+        session.clear()
+        logout_user()
+        return "/login"
+
+
+
 @dash.callback(
     Output({"type": "redirect", "index": "projects"}, "pathname", allow_duplicate = True),
     Input({"type": "project_button", "index": ALL}, "n_clicks"),
@@ -96,7 +108,6 @@ def ProjectChoice(clickdata):
     page_project = {}
     page_project["project_id"] = ctx.triggered_id["index"]
     session["page_project"] = json.dumps(page_project, cls = functions.NpEncoder)
-    
 
     return "/project"
 

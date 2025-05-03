@@ -1,12 +1,12 @@
 import dash
 import dash_mantine_components as dmc
-from dash import Input, Output, State, _dash_renderer, ctx, ALL, dcc
+from dash import Input, Output, State, _dash_renderer, ctx, ALL, dcc, MATCH
 from dash_iconify import DashIconify
 from dash.exceptions import PreventUpdate
 import dash_cytoscape as cyto
 
 from flask import session
-from flask_login import current_user
+from flask_login import current_user, logout_user
 
 import functions
 import json
@@ -47,9 +47,9 @@ def layout():
     page_analytics = session.pop("page_analytics", None)
 
     #Очистка данных
-    project_data = session.pop("project_data", None)
-    element_data = session.pop("element_data", None)
-    comp_data = session.pop("comp_data", None)
+    #project_data = session.pop("project_data", None)
+    #element_data = session.pop("element_data", None)
+    #comp_data = session.pop("comp_data", None)
 
     if not current_user.is_authenticated:
         return dcc.Location(id = {"type": "unauthentificated", "index": "project"}, pathname = "/login")
@@ -61,18 +61,20 @@ def layout():
         project_data = functions.GetProjectData(current_user.userdata["id"], page_project["project_id"])
         element_data = functions.GetElementData(project_data, current_user.userdata["id"])
         
-        session["project_data"] = json.dumps(project_data, cls = functions.NpEncoder)
-        session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
-
-        #project_data = json.loads(session["project_data"])
+        project_data_store = json.dumps(project_data, cls = functions.NpEncoder)
+        element_data_store = json.dumps(element_data, cls = functions.NpEncoder)
 
         layout = dmc.AppShell(
             children = [
+                dcc.Location(id = {"type": "redirect", "index": "project"}, pathname = "/project"),
+                dcc.Store(id="project_data_store", storage_type='session', data=project_data_store),
+                dcc.Store(id="element_data_store", storage_type='session', data=element_data_store),
+                dcc.Store(id="comp_data_store", storage_type='session', clear_data=True),
+                #dcc.Interval(id={'type': 'load_interval', 'index': 'project'}, n_intervals=0, max_intervals=1, interval=1), # max_intervals=0 - запустится 1 раз
                 dmc.AppShellHeader(
                     children = [
                         dmc.Box(
                             children = [
-                                dcc.Location(id = {"type": "redirect", "index": "project"}, pathname = "/project"),
                                 dcc.Store(id = {"type": "init_store", "index": "project"}, storage_type = "memory"),
                                 dcc.Store(id = "prev_action", storage_type = "memory", data = False),
                                 dmc.Flex(
@@ -164,7 +166,7 @@ def layout():
                                                     children = [
                                                         dmc.Flex(
                                                             children = [
-                                                                dmc.TextInput(id = "name_input", label = "Название", disabled = bool(project_data["status"]["stage"] > 1) or bool(project_data["role"]["access_level"] < 3)),
+                                                                dmc.TextInput(debounce=500, id = "name_input", label = "Название", disabled = bool(project_data["status"]["stage"] > 1) or bool(project_data["role"]["access_level"] < 3)),
                                                                 dmc.Checkbox(id = "node_checkbox", size = 36, checked = True)
                                                             ],
                                                             gap = "md",
@@ -266,7 +268,7 @@ def layout():
                         autoungrabify = True,
                         autoRefreshLayout = True,
                         wheelSensitivity = 0.2,
-                        elements = []
+                        elements = element_data["elements"]
                     )
                 ]),
             ],
@@ -277,27 +279,60 @@ def layout():
         layout = dmc.MantineProvider(layout)
         return layout
 
-
-
+'''@dash.callback(
+    Output("project_data_store", 'data', allow_duplicate = True),
+    Output("element_data_store", 'data', allow_duplicate = True),
+    Input(component_id={'type': 'load_interval22222', 'index': 'project'}, component_property="n_intervals"),
+    prevent_initial_call = True
+    )
+def update_spanner(n_intervals:int):
+    page_project = json.loads(session["page_project"])
+    project_data = functions.GetProjectData(current_user.userdata["id"], page_project["project_id"])
+    element_data = functions.GetElementData(project_data, current_user.userdata["id"])
+    return json.dumps(project_data, cls = functions.NpEncoder), json.dumps(element_data, cls = functions.NpEncoder)
+'''
 #Навигация ----------------------------------------------------------------------------------------------------
+
+@dash.callback(
+    Output({"type": "redirect", "index": "project"}, "pathname", allow_duplicate = True),
+    Input({"type": "logout_button", "index": "project"}, "n_clicks"),
+    State("project_data_store", 'data'),
+    State("element_data_store", 'data'),
+    prevent_initial_call = True
+)
+def Logout(clickdata, project_data_store, element_data_store):
+    if clickdata:
+        if project_data_store == None or element_data_store == None: raise PreventUpdate
+        project_data = json.loads(project_data_store)
+        element_data = json.loads(element_data_store)
+        SaveGraphToBD(project_data, element_data)
+        session.clear()
+        logout_user()
+        return "/login"
 
 @dash.callback(
     Output({"type": "redirect", "index": "project"}, "pathname", allow_duplicate = True),
     Output("current_node_id", "data", allow_duplicate = True),
     Input({"type": "menu_navlink", "index": ALL}, "n_clicks"),
-    State("current_node_id", "data"),
+    State("project_data_store", 'data'),
+    State("element_data_store", 'data'),
     prevent_initial_call = True
 )
-def RedirectMenuItems(clickdata, current_node_id):
+def RedirectMenuItems(clickdata, project_data_store, element_data_store):
+    
+    if project_data_store == None or element_data_store == None: raise PreventUpdate
+    project_data = json.loads(project_data_store)
+    element_data = json.loads(element_data_store)
+
     if ctx.triggered_id["index"] == "/settings":
-        SaveGraph(0)
+        SaveGraphToBD(project_data, element_data)
         page_project = json.loads(session["page_project"])
         page_settings = {}
         page_settings["project_id"] = page_project["project_id"]
         session["page_settings"] = json.dumps(page_settings, cls = functions.NpEncoder)
 
     elif ctx.triggered_id["index"] == "/analytics":
-        SaveGraph(0)
+        SaveGraphToBD(project_data, element_data)
         page_project = json.loads(session["page_project"])
         page_analytics = {}
         page_analytics["project_id"] = page_project["project_id"]
@@ -316,15 +351,43 @@ def RedirectToNodeCompEval(clickdata, current_node_id):
     if clickdata is None:
         raise PreventUpdate
     else:
+        page_project = json.loads(session["page_project"])
         page_compeval = {}
+        page_compeval["project_id"] = page_project["project_id"]
         page_compeval["current_node_id"] = current_node_id
         page_compeval["cursor"] = 0
         session["page_compeval"] = json.dumps(page_compeval, cls = functions.NpEncoder)
         return "/compeval"
 
-
-
 #Граф и панель инструментов ----------------------------------------------------------------------------------------------------
+
+def SaveGraphToBD(project_data, element_data):
+    if project_data["status"]["stage"] == 1 and project_data["role"]["access_level"] > 2: return functions.SaveInitialGraphToDB(element_data, project_data["id"])
+    if project_data["status"]["stage"] == 2 and project_data["role"]["access_level"] > 1: return functions.SaveEdgedataToDB(element_data, project_data["id"], current_user.userdata["id"])
+
+
+
+@dash.callback(
+    Output("graph", "elements", allow_duplicate = True),
+    Output("prev_action", "data", allow_duplicate = True),
+    Output("element_data_store", 'data', allow_duplicate = True),
+    Input("save_graph", "n_clicks"),
+    State("project_data_store", 'data'),
+    State("element_data_store", 'data'),
+    prevent_initial_call = True
+)
+def SaveGraph(clickdata, project_data_store, element_data_store):
+    
+    if project_data_store == None or element_data_store == None: raise PreventUpdate
+    project_data = json.loads(project_data_store)
+    element_data = json.loads(element_data_store)
+
+    if SaveGraphToBD(project_data, element_data):
+        functions.ColorElements(element_data)
+        functions.RefreshNodePositionsSizes(element_data["elements"])
+
+    return element_data["elements"], True, json.dumps(element_data, cls = functions.NpEncoder)
+
 
 @dash.callback(
     output = {
@@ -335,6 +398,7 @@ def RedirectToNodeCompEval(clickdata, current_node_id):
         "edge_checkboxes": Output("edge_checkboxes", "children"),
         "elements": Output("graph", "elements", allow_duplicate = True),
         "prev_action": Output("prev_action", "data", allow_duplicate = True),
+        "element_data": Output("element_data_store", 'data', allow_duplicate = True),
     },
     inputs = {
         "input": {
@@ -343,28 +407,34 @@ def RedirectToNodeCompEval(clickdata, current_node_id):
             "current_node_id": Input("current_node_id", "data"),
         }
     },
+    state=dict(
+        project_data_store=State("project_data_store", 'data'),
+        element_data_store=State("element_data_store", 'data'),
+    ),
     prevent_initial_call = True
 )
-def SelectElement(input):
+def SelectElement(input, project_data_store, element_data_store):
     trigger = {"id": ctx.triggered_id, "property": ctx.triggered[0]["prop_id"].split(".")[1], "value": ctx.triggered[0]["value"]}
 
-    project_data = json.loads(session["project_data"])
-    element_data = json.loads(session["element_data"])
+    if project_data_store == None or element_data_store == None: raise PreventUpdate
+    project_data = json.loads(project_data_store)
+    element_data = json.loads(element_data_store)
 
-    
     if trigger["property"] == "tapNodeData":
         current_node = functions.GetElementById(input["tapNodeData"]["id"], element_data["elements"])
-        element_data["state"]["selected"] = current_node
-    elif trigger["property"] == "tapNodeData":
+    elif trigger["property"] == "tapEdgeData":
         current_node = functions.GetElementById(input["tapEdgeData"]["source"], element_data["elements"])
-        element_data["state"]["selected"] = functions.GetElementById(input["tapEdgeData"]["id"], element_data["elements"])
     else:
         current_node = functions.GetElementById(input["current_node_id"], element_data["elements"])
 
-    functions.ColorElements(element_data)
-    session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
-
     if not current_node: raise PreventUpdate
+
+    if trigger["property"] == "tapNodeData":
+        element_data["state"]["selected"] = current_node
+    elif trigger["property"] == "tapEdgeData":
+        element_data["state"]["selected"] = functions.GetElementById(input["tapEdgeData"]["id"], element_data["elements"])
+
+    functions.ColorElements(element_data)
 
     output = {}
     output["current_node_id"] = current_node["data"]["id"]
@@ -374,6 +444,7 @@ def SelectElement(input):
     output["edge_checkboxes"] = GetEdgeCheckboxes(current_node, element_data, project_data)
     output["elements"] = element_data["elements"]
     output["prev_action"] = False
+    output["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
 
     return output
 
@@ -381,15 +452,19 @@ def SelectElement(input):
 @dash.callback(
     Output("graph", "elements", allow_duplicate = True),
     Output("prev_action", "data", allow_duplicate = True),
+    Output("element_data_store", 'data', allow_duplicate = True),
     Input("node_checkbox", "checked"),
     Input({"type": "edge_checkbox", "index": ALL}, "checked"),
     State("current_node_id", "data"),
     State("prev_action", "data"),
+    State("element_data_store", 'data'),
     prevent_initial_call = True
 )
-def CheckboxClick(node_checked, edge_checked, current_node_id, prev_action):
+def CheckboxClick(node_checked, edge_checked, current_node_id, prev_action, element_data_store):
     trigger = {"id": ctx.triggered_id, "property": ctx.triggered[0]["prop_id"].split(".")[1], "value": ctx.triggered[0]["value"]}
-    element_data = json.loads(session["element_data"])
+    
+    if element_data_store == None: raise PreventUpdate
+    element_data = json.loads(element_data_store)
 
     if prev_action:
         current_node = functions.GetElementById(current_node_id, element_data["elements"])
@@ -409,21 +484,24 @@ def CheckboxClick(node_checked, edge_checked, current_node_id, prev_action):
             functions.AddStep(edge_object, element_data, "add")
 
         functions.ColorElements(element_data)
-        session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
-
-    return element_data["elements"], True
+        
+    return element_data["elements"], True, json.dumps(element_data, cls = functions.NpEncoder)
 
 
 @dash.callback(
     Output("graph", "elements", allow_duplicate = True),
     Output("prev_action", "data", allow_duplicate = True),
+    Output("element_data_store", 'data', allow_duplicate = True),
     Input("name_input", "value"),
     State("current_node_id", "data"),
     State("prev_action", "data"),
+    State("element_data_store", 'data'),
     prevent_initial_call = True
 )
-def ChangeNodeName(new_name, current_node_id, prev_action):
-    element_data = json.loads(session["element_data"])
+def ChangeNodeName(new_name, current_node_id, prev_action, element_data_store):
+    
+    if element_data_store == None: raise PreventUpdate
+    element_data = json.loads(element_data_store)
 
     if prev_action:
         current_node = functions.GetElementById(current_node_id, element_data["elements"])
@@ -433,19 +511,22 @@ def ChangeNodeName(new_name, current_node_id, prev_action):
         current_node["data"]["name"] = new_name[:strlen]
 
         functions.RefreshNodePositionsSizes(element_data["elements"])
-        session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
 
-    return element_data["elements"], True
+    return element_data["elements"], True, json.dumps(element_data, cls = functions.NpEncoder)
 
 
 @dash.callback(
     Output("graph", "elements", allow_duplicate = True),
     Output("prev_action", "data", allow_duplicate = True),
+    Output("element_data_store", 'data', allow_duplicate = True),
     Input({"type": "step_button", "index": ALL}, "n_clicks"),
+    State("element_data_store", 'data'),
     prevent_initial_call = True
 )
-def StepButtons(clickdata):
-    element_data = json.loads(session["element_data"])
+def StepButtons(clickdata, element_data_store):
+    
+    if element_data_store == None: raise PreventUpdate
+    element_data = json.loads(element_data_store)
 
     if ctx.triggered_id["index"] == "rollback": 
         used_list = "history"
@@ -476,21 +557,24 @@ def StepButtons(clickdata):
 
     functions.ColorElements(element_data)
     functions.RefreshNodePositionsSizes(element_data["elements"])
-    session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
-
-    return element_data["elements"], True
+    
+    return element_data["elements"], True, json.dumps(element_data, cls = functions.NpEncoder)
 
 
 @dash.callback(
     Output("graph", "elements", allow_duplicate = True),
     Output("current_node_id", "data", allow_duplicate = True),
     Output("prev_action", "data", allow_duplicate = True),
+    Output("element_data_store", 'data', allow_duplicate = True),
     Input("add_node", "n_clicks"),
     State("current_node_id", "data"),
+    State("element_data_store", 'data'),
     prevent_initial_call = True
 )
-def AddNewNode(clickdata, current_node_id):
-    element_data = json.loads(session["element_data"])
+def AddNewNode(clickdata, current_node_id, element_data_store):
+    
+    if element_data_store == None: raise PreventUpdate
+    element_data = json.loads(element_data_store)
 
     node_object = functions.CreateNodeObject(functions.GetElementById(current_node_id, element_data["elements"]))
     functions.AddElement(node_object, element_data)
@@ -499,30 +583,8 @@ def AddNewNode(clickdata, current_node_id):
 
     functions.ColorElements(element_data)
     functions.RefreshNodePositionsSizes(element_data["elements"])
-    session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
-
-    return element_data["elements"], node_object["data"]["id"], True
-
-
-@dash.callback(
-    Output("graph", "elements", allow_duplicate = True),
-    Output("prev_action", "data", allow_duplicate = True),
-    Input("save_graph", "n_clicks"),
-    prevent_initial_call = True
-)
-def SaveGraph(clickdata):
-    element_data = json.loads(session["element_data"])
-    project_data = json.loads(session["project_data"])
-
-    if project_data["status"]["stage"] == 1: functions.SaveInitialGraphToDB(element_data, project_data["id"])
-    if project_data["status"]["stage"] == 2: functions.SaveEdgedataToDB(element_data, project_data["id"], current_user.userdata["id"])
-
-    functions.ColorElements(element_data)
-    functions.RefreshNodePositionsSizes(element_data["elements"])
-
-    session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
-
-    return element_data["elements"], True
+    
+    return element_data["elements"], node_object["data"]["id"], True, json.dumps(element_data, cls = functions.NpEncoder)
 
 
 @dash.callback(
@@ -543,12 +605,18 @@ def SaveGraph(clickdata):
             "current_node_id": State("current_node_id", "data"),
         }
     },
+    state=dict(
+        project_data_store=State("project_data_store", 'data'),
+        element_data_store=State("element_data_store", 'data'),
+    ),
     prevent_initial_call = True 
 )
-def ElementChangeProcessing(input):
-    element_data = json.loads(session["element_data"])
-    project_data = json.loads(session["project_data"])
+def ElementChangeProcessing(input, project_data_store, element_data_store):
 
+    if project_data_store == None or element_data_store == None: raise PreventUpdate
+    project_data = json.loads(project_data_store)
+    element_data = json.loads(element_data_store)
+    
     current_node = functions.GetElementById(input["current_node_id"], input["elements"])
 
     output = {}
@@ -571,53 +639,51 @@ def ElementChangeProcessing(input):
     return output
 
 
-@dash.callback(
-    Output("graph", "elements"),
-    Input({"type": "init_store", "index": "project"}, "data")
-)
-def InitGraph(init):
-    element_data = json.loads(session["element_data"])
-    if element_data["state"]["selected"]: 
-        element_data["state"]["selected"] = functions.GetElementById(element_data["state"]["selected"]["data"]["id"], element_data["elements"])
-        element_data["state"]["selected"]["classes"] = "default"
-        element_data["state"]["selected"] = None
-
-    session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
-    return element_data["elements"]
-
-
 #Выпадающее меню ----------------------------------------------------------------------------------------------------
 
 @dash.callback(
     Output("current_node_id", "data", allow_duplicate = True),
+    Output("element_data_store", 'data', allow_duplicate = True),
     Input("restore_initial_hierarchy", "n_clicks"),
+    State("project_data_store", 'data'),
     prevent_initial_call = True
 )
-def RestoreInitialHierarchy(clickdata):
-    project_data = json.loads(session["project_data"])
+def RestoreInitialHierarchy(clickdata, project_data_store):
+    
+    if project_data_store == None: raise PreventUpdate
+    project_data = json.loads(project_data_store)
 
     if functions.DiscardEdgedataChanges(project_data["id"], current_user.userdata["id"]):
         element_data = functions.GetElementData(project_data, current_user.userdata["id"])
-        session["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
     else: raise PreventUpdate
 
-    return None
+    return None, json.dumps(element_data, cls = functions.NpEncoder)
 
 
 @dash.callback(
     Output("graph", "elements", allow_duplicate = True),
+    Output("project_data_store", 'data', allow_duplicate = True),
     Input({"type": "stage_completed", "index": ALL}, "checked"),
+    State("project_data_store", 'data'),
+    State("element_data_store", 'data'),
     prevent_initial_call = True
 )
-def CompletedCheckboxes(checked):
-    project_data = json.loads(session["project_data"])
-    element_data = json.loads(session["element_data"])
+def CompletedCheckboxes(checked, project_data_store, element_data_store):
+
+    if project_data_store == None or element_data_store == None: raise PreventUpdate
+    project_data = json.loads(project_data_store)
+    element_data = json.loads(element_data_store)
+
     option = ctx.triggered_id["index"]
     checked = ctx.triggered[0]["value"]
 
     if functions.ChangeCompleteState(project_data["id"], current_user.userdata["id"], option, checked):
         project_data["completed"][option] = checked
-        session["project_data"] = json.dumps(project_data, cls = functions.NpEncoder)
     else: raise PreventUpdate()
 
-    return element_data["elements"]
+    return element_data["elements"], json.dumps(project_data, cls = functions.NpEncoder)
+
+    #Output("project_data_store", 'data', allow_duplicate = True),
+    #Output("element_data_store", 'data', allow_duplicate = True),
+    #State("project_data_store", 'data'),
+    #State("element_data_store", 'data'),

@@ -5,7 +5,7 @@
 .hi-cell
  {
     min-width:100px;
-    max-width:300px;
+    /*max-width:300px;*/
     height:80px;
     border:1px var(--mantine-color-dark-7) solid;
 }

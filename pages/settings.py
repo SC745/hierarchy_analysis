@@ -1,12 +1,12 @@
 import dash
 import dash_mantine_components as dmc
-from dash import Input, Output, State, _dash_renderer, ctx, ALL, dcc
+from dash import Input, Output, State, _dash_renderer, ctx, ALL, dcc, no_update
 from dash_iconify import DashIconify
 from dash.exceptions import PreventUpdate
 import pandas as pd
 
 from flask import session
-from flask_login import current_user
+from flask_login import current_user, logout_user
 
 import functions
 import json
@@ -66,9 +66,9 @@ def layout():
     page_analytics = session.pop("page_analytics", None)
 
     #Очистка данных
-    project_data = session.pop("project_data", None)
-    element_data = session.pop("element_data", None)
-    comp_data = session.pop("comp_data", None)
+    #project_data = session.pop("project_data", None)
+    #element_data = session.pop("element_data", None)
+    #comp_data = session.pop("comp_data", None)
     
     if not current_user.is_authenticated: 
         return dcc.Location(id = {"type": "unauthentificated", "index": "settings"}, pathname = "/login")
@@ -77,19 +77,23 @@ def layout():
     else:
         page_settings = json.loads(session["page_settings"])
         project_data = functions.GetProjectData(current_user.userdata["id"], page_settings["project_id"])
-        #project_data = json.loads(session["project_data"])
+
         if project_data["role"]["access_level"] < 3: 
             return dcc.Location(id = {"type": "access_denied", "index": "settings"}, pathname = "/project")
         
-        session["project_data"] = json.dumps(project_data, cls = functions.NpEncoder)
+        project_data_store = json.dumps(project_data, cls = functions.NpEncoder)
 
         layout = dmc.AppShell(
             children = [
+                dcc.Location(id = {"type": "redirect", "index": "settings"}, pathname = "/settings"),
+                dcc.Store(id = "project_data_store", storage_type='session', data=project_data_store),
+                dcc.Store(id = "element_data_store", storage_type='session', clear_data=True),
+                dcc.Store(id = "comp_data_store", storage_type='session', clear_data=True),
+                #dcc.Interval(id={'type': 'load_interval', 'index': 'settings'}, n_intervals=0, max_intervals=1, interval=1), # max_intervals=0 - запустится 1 раз
                 dmc.AppShellHeader(
                     children = [
                         dmc.Box(
                             children = [
-                                dcc.Location(id = {"type": "redirect", "index": "settings"}, pathname = "/settings"),
                                 dmc.Menu(
                                     children = [
                                         dmc.MenuTarget(dmc.Text(functions.GetShortUsername(current_user.userdata["name"]))),
@@ -340,9 +344,36 @@ def layout():
     layout = dmc.MantineProvider(layout)
     return layout
 
+'''@dash.callback(
+    Output("project_data_store", 'data', allow_duplicate = True),
+    Output("element_data_store", 'data', allow_duplicate = True),
+    Input(component_id={'type': 'load_interval2222', 'index': 'settings'}, component_property="n_intervals"),
+    prevent_initial_call = True
+    )
+def update_spanner(n_intervals:int):
+    page_settings = json.loads(session["page_settings"])
+    project_data = functions.GetProjectData(current_user.userdata["id"], page_settings["project_id"])
+    element_data = functions.GetElementData(project_data, current_user.userdata["id"])
+    return json.dumps(project_data, cls = functions.NpEncoder), json.dumps(element_data, cls = functions.NpEncoder)
+'''
 
+    #Output("project_data_store", 'data', allow_duplicate = True),
+    #State("project_data_store", 'data'),
+    #project_data = json.loads(project_data_store)
 
 #Навигация ----------------------------------------------------------------------------------------------------
+
+@dash.callback(
+    Output({"type": "redirect", "index": "settings"}, "pathname", allow_duplicate = True),
+    Input({"type": "logout_button", "index": "settings"}, "n_clicks"),
+    prevent_initial_call = True
+)
+def Logout(clickdata):
+    if clickdata:
+        session.clear()
+        logout_user()
+        return "/login"
+
 
 @dash.callback(
     output = {
@@ -404,7 +435,6 @@ def RedirectToProject(clickdata):
         return "/project"
 
 
-
 #Управление проектом ----------------------------------------------------------------------------------------------------
 
 @dash.callback(
@@ -422,45 +452,50 @@ def MergemethodChoice(method, slider_value):
 
 
 @dash.callback(
-    Output({"type": "redirect", "index": "settings"}, "pathname", allow_duplicate = True),
+    Output("project_data_store", 'data', allow_duplicate = True),
     Input("mergevalue_slider", "value"),
+    State("project_data_store", 'data'),
     running = [Output("mergevalue_slider", "disabled"), True],
     prevent_initial_call = True
 )
-def MergevalueChoice(slider_value):
-    project_data = json.loads(session["project_data"])
+def MergevalueChoice(slider_value, project_data_store):
+    if project_data_store == None: raise PreventUpdate
+    project_data = json.loads(project_data_store)
     if functions.UpdateMergevalue(slider_value, project_data["id"]):
         project_data["merge_coef"] = slider_value
-        session["project_data"] = json.dumps(project_data, cls = functions.NpEncoder)
-
-    raise PreventUpdate
+    
+    return json.dumps(project_data, cls = functions.NpEncoder)
 
 
 @dash.callback(
-    Output({"type": "redirect", "index": "settings"}, "pathname", allow_duplicate = True),
+    Output("project_data_store", 'data', allow_duplicate = True),
     Input("rename_project", "n_clicks"),
     State("project_name_input", "value"),
+    State("project_data_store", 'data'),
     prevent_initial_call = True
 )
-def RenameProject(clickdata, project_name):
-    project_data = json.loads(session["project_data"])
+def RenameProject(clickdata, project_name, project_data_store):
+    if project_data_store == None: raise PreventUpdate
+    project_data = json.loads(project_data_store)
     if functions.UpdateProjectName(project_name, project_data["id"]):
         project_data["name"] = project_name
-        session["project_data"] = json.dumps(project_data, cls = functions.NpEncoder)
 
-    raise PreventUpdate
+    return json.dumps(project_data, cls = functions.NpEncoder)
 
 
 @dash.callback(
     Output("status_select", "value", allow_duplicate = True),
     Output("task_table", "children"),
+    Output("project_data_store", 'data', allow_duplicate = True),
     Input({"type": "status_change", "index": ALL}, "n_clicks"),
     State("status_select", "value"),
     State("status_select", "data"),
+    State("project_data_store", 'data'),
     prevent_initial_call = True
 )
-def ChangeProjectStatus(clickdata, old_status, select_data):
-    project_data = json.loads(session["project_data"])
+def ChangeProjectStatus(clickdata, old_status, select_data, project_data_store):
+    if project_data_store == None: raise PreventUpdate
+    project_data = json.loads(project_data_store)
     select_data = pd.DataFrame(select_data)
 
     direction = 0
@@ -471,12 +506,11 @@ def ChangeProjectStatus(clickdata, old_status, select_data):
     new_status = functions.GetStatusByCode(new_status_code)
     if functions.UpdateProjectStatus(new_status, project_data):
         project_data["status"] = new_status
-        session["project_data"] = json.dumps(project_data, cls = functions.NpEncoder)
     else: raise PreventUpdate
 
     task_table_content = functions.CreateTableContent(["Имя", "Оценка зависимостей", "Сравнительная оценка"], functions.GetTaskTableData(project_data["id"]))
 
-    return new_status_code, task_table_content
+    return new_status_code, task_table_content, json.dumps(project_data, cls = functions.NpEncoder)
 
 
 @dash.callback(
@@ -494,19 +528,19 @@ def StatusButtonState(project_status):
 
 @dash.callback(
     Output({"type": "redirect", "index": "settings"}, "pathname", allow_duplicate = True),
+    Output("project_data_store", 'data', allow_duplicate = True),
     Input("delete_project", "n_clicks"),
+    State("project_data_store", 'data'),
     prevent_initial_call = True
 )
-def DeleteProject(clickdata):
-    project_data = json.loads(session["project_data"])
-
+def DeleteProject(clickdata, project_data_store):
+    if project_data_store == None: raise PreventUpdate
+    project_data = json.loads(project_data_store)
     if functions.DeleteProject(project_data["id"]):
         project_data = {}
-        session["project_data"] = json.dumps(project_data, cls = functions.NpEncoder)
-        return "/projects"
+        return "/projects", json.dumps(project_data, cls = functions.NpEncoder)
     
     raise PreventUpdate
-
 
 
 #Управление пользователями ----------------------------------------------------------------------------------------------------
@@ -520,10 +554,12 @@ def DeleteProject(clickdata):
     Input("user_select", "value"),
     Input("role_select", "value"),
     State("role_select", "data"),
+    State("project_data_store", 'data'),
     prevent_initial_call = True
 )
-def SelectUser(user_login, role_code, role_select_data):
-    project_data = json.loads(session["project_data"])
+def SelectUser(user_login, role_code, role_select_data, project_data_store):
+    if project_data_store == None: raise PreventUpdate
+    project_data = json.loads(project_data_store)
 
     user_role = functions.GetUserRole(user_login, project_data["id"])
     if user_role:
@@ -550,10 +586,13 @@ def SelectUser(user_login, role_code, role_select_data):
     Input("change_role", "n_clicks"),
     State("user_select", "value"),
     State("role_select", "value"),
+    State("project_data_store", 'data'),
     prevent_initial_call = True
 )
-def ChangeRole(clickdata, user_login, role_code):
-    project_data = json.loads(session["project_data"])
+def ChangeRole(clickdata, user_login, role_code, project_data_store):
+    
+    if project_data_store == None: raise PreventUpdate
+    project_data = json.loads(project_data_store)
     prev_role_code = functions.GetUserRole(user_login, project_data["id"])["role_code"]
 
     res = functions.UpdateUserRole(user_login, role_code, project_data["id"])
@@ -576,10 +615,12 @@ def ChangeRole(clickdata, user_login, role_code):
     Input("add_user", "n_clicks"),
     State("user_select", "value"),
     State("role_select", "value"),
+    State("project_data_store", 'data'),
     prevent_initial_call = True
 )
-def AddUser(clickdata, user_login, role_code):
-    project_data = json.loads(session["project_data"])
+def AddUser(clickdata, user_login, role_code, project_data_store):
+    if project_data_store == None: raise PreventUpdate
+    project_data = json.loads(project_data_store)
     res = functions.InsertUserdata(user_login, role_code, project_data["id"])
     if project_data["status"]["stage"] > 1 and res:
         res = functions.InsertUserEdgedata(user_login, project_data["id"])
@@ -601,11 +642,13 @@ def AddUser(clickdata, user_login, role_code):
     Input({"type": "delete_button", "index": ALL}, "n_clicks"),
     State("user_select", "value"),
     State("role_select", "value"),
+    State("project_data_store", 'data'),
     prevent_initial_call = True
 )
-def DeleteUser(clickdata, user_login, role_code):
+def DeleteUser(clickdata, user_login, role_code, project_data_store):
     if ctx.triggered[0]["value"]:
-        project_data = json.loads(session["project_data"])
+        if project_data_store == None: raise PreventUpdate
+        project_data = json.loads(project_data_store)
         user_login = ctx.triggered_id["index"]
 
         res = functions.DeleteUserdata(user_login, project_data["id"])
@@ -622,7 +665,6 @@ def DeleteUser(clickdata, user_login, role_code):
     raise PreventUpdate
 
 
-
 #Управление компетентностью ----------------------------------------------------------------------------------------------------
 
 @dash.callback(
@@ -637,34 +679,39 @@ def DeleteUser(clickdata, user_login, role_code):
             "competence_select": Output("competence_select", "value", allow_duplicate = True),
             "source_node_select": Output("source_node_select", "value"),
         },
-        "message": Output("competence_type_message", "children")
+        "message": Output("competence_type_message", "children"),
+        "project_data_store": Output("project_data_store", 'data', allow_duplicate = True), 
     },
     inputs = {
         "input": {
             "competence_type": Input("competence_radiogroup", "value"),
         }
     },
+    state=dict(
+        project_data_store=State("project_data_store", 'data'),
+    ),
     prevent_initial_call = True
 )
-def CompetenceTypeChoice(input):
-    project_data = json.loads(session["project_data"])
+def CompetenceTypeChoice(input, project_data_store):
+
+    if project_data_store == None: raise PreventUpdate
+    project_data = json.loads(project_data_store)
 
     display = {}
     if input["competence_type"] == "Постоянный":
         display["user_competence_container"] = "block"
         display["edge_competence_container"] = "none"
 
-        project_data["const_comp"] = True
-        if functions.SetDefaultEdgeCompetence(project_data["id"]) and functions.SetCompetenceType(project_data["id"], project_data["const_comp"]): 
-            session["project_data"] = json.dumps(project_data, cls = functions.NpEncoder)
+        if functions.SetDefaultEdgeCompetence(project_data["id"]) and functions.SetCompetenceType(project_data["id"], True): 
+            project_data["const_comp"] = True
 
     if input["competence_type"] == "Настраиваемый":
         display["user_competence_container"] = "none"
         display["edge_competence_container"] = "block"
 
         project_data["const_comp"] = False
-        if functions.SetCompetenceType(project_data["id"], project_data["const_comp"]):
-            session["project_data"] = json.dumps(project_data, cls = functions.NpEncoder)
+        if functions.SetCompetenceType(project_data["id"], False):
+            project_data["const_comp"] = False
 
     display["edge_competence_message"] = "block" if project_data["status"]["code"] == "initial" else "none"
     display["edge_competence_data"] = "block" if project_data["status"]["code"] != "initial" else "none"
@@ -677,7 +724,8 @@ def CompetenceTypeChoice(input):
     output["display"] = display
     output["value"] = value
     output["message"] = "Настройка постоянной компетентности пользователей" if project_data["const_comp"] else "Настройка компетентности пользователя при оценке связи"
-
+    output["project_data_store"] = json.dumps(project_data, cls = functions.NpEncoder)
+    
     return output
 
 
@@ -686,10 +734,13 @@ def CompetenceTypeChoice(input):
     Output("competence_select", "label"),
     Output("competence_select", "value", allow_duplicate = True),
     Input("group_checkbox", "checked"),
+    State("project_data_store", 'data'),
     prevent_initial_call = True
 )
-def GroupCheckbox(checked):
-    project_data = json.loads(session["project_data"])
+def GroupCheckbox(checked, project_data_store):
+    
+    if project_data_store == None: raise PreventUpdate
+    project_data = json.loads(project_data_store)
     data = functions.GetSelectData("competence_select", project_data["id"], checked)
     label = "Группа пользователей" if checked else "Пользователь"
 
@@ -709,7 +760,6 @@ def EdgeCompetenceChoice(table_id, source_node_id, checked):
 
     save_button_disabled = not (table_id and source_node_id)
     if not save_button_disabled:
-        project_data = json.loads(session["project_data"])
         if checked: edge_competence_data = functions.GetGroupEdgeCompetenceData(int(source_node_id), int(table_id))
         else: edge_competence_data = functions.GetUserEdgeCompetenceData(int(source_node_id), int(table_id))
 
@@ -734,6 +784,5 @@ def SaveEdgeCompetence(clickdata, edge_competence_values, edge_competence_ids, t
     else: functions.SetUserEdgeCompetence(competence_data, int(table_id))
 
     raise PreventUpdate
-
 
 

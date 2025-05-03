@@ -40,11 +40,11 @@ nodebox_props = {
 
 #Получить датафрейм вершин из базы
 def GetNodes(project_id):
-    query = f"""select uuid, node_name from tbl_nodes
+    query = f"""select uuid, node_name, id from tbl_nodes
         where project_id = {project_id}
-        order by node_name"""
+        order by node_name, id"""
     cursor.execute(query)
-    nodes = pd.DataFrame(cursor.fetchall(), columns = ["id", "name"])
+    nodes = pd.DataFrame(cursor.fetchall(), columns = ["id", "name", "table_id"])
 
     return nodes
 
@@ -53,17 +53,19 @@ def GetEdges(project_id):
     query = f"""select 
         tbl_edges.uuid, 
         source.uuid as source_id, 
-        target.uuid as target_id
+        target.uuid as target_id,
+        false as deleted,
+        tbl_edges.id
         from
         tbl_edges
         inner join tbl_nodes as source on source.id = tbl_edges.source_id
         inner join tbl_nodes as target on target.id = tbl_edges.target_id
         where 
-        tbl_edges.project_id = {project_id}"""
+        tbl_edges.project_id = {project_id}
+        order by source.node_name, target.node_name, tbl_edges.id"""
         
     cursor.execute(query)
-    edges = pd.DataFrame(cursor.fetchall(), columns = ["id", "source", "target"])
-    edges["deleted"] = False
+    edges = pd.DataFrame(cursor.fetchall(), columns = ["id", "source", "target", "deleted", "table_id"])
 
     return edges
 
@@ -73,7 +75,8 @@ def GetEdgedata(project_id, user_id):
         tbl_edges.uuid, 
         source.uuid as source_id, 
         target.uuid as target_id,
-        tbl_edgedata.deleted
+        tbl_edgedata.deleted,
+        tbl_edges.id
         from
         tbl_edgedata 
         inner join tbl_edges on tbl_edges.id = tbl_edgedata.edge_id
@@ -81,10 +84,11 @@ def GetEdgedata(project_id, user_id):
         inner join tbl_nodes as target on target.id = tbl_edges.target_id
         where
         tbl_edges.project_id = {project_id} and
-        tbl_edgedata.user_id = {user_id}"""
+        tbl_edgedata.user_id = {user_id}
+        order by source.node_name, target_node_name, tbl_edges.id"""
         
     cursor.execute(query)
-    edgedata = pd.DataFrame(cursor.fetchall(), columns = ["id", "source", "target", "deleted"])
+    edgedata = pd.DataFrame(cursor.fetchall(), columns = ["id", "source", "target", "deleted", "table_id"])
     return edgedata
 
 #Получить ребра с коэффициентом объединения
@@ -93,12 +97,18 @@ def GetMergedEdges(project_id):
         rated_edges.uuid, 
         source.uuid as source_id, 
         target.uuid as target_id,
-        rated_edges.merge_coef
+        rated_edges.deleted,
+        tbl_edges.id
         from
         (
             select
+            sum(tbl_edgedata.competence * (not deleted)::int) / sum(tbl_edgedata.competence) as merge_coef,
             uuid,
-            sum(tbl_edgedata.competence * (not deleted)::int) / sum(tbl_edgedata.competence) as merge_coef
+            case 
+                when 0.8 > 0 and sum(tbl_edgedata.competence * (not deleted)::int) / sum(tbl_edgedata.competence) < 0.8 then true
+                when 0.8 > 0 and sum(tbl_edgedata.competence * (not deleted)::int) / sum(tbl_edgedata.competence) >= 0.8 then false
+                when 0.8 = 0 and sum(tbl_edgedata.competence * (not deleted)::int) / sum(tbl_edgedata.competence) = 0.8 then true
+            end as deleted
             from
             tbl_edgedata
             inner join tbl_userdata on tbl_userdata.user_id = tbl_edgedata.user_id
@@ -110,10 +120,11 @@ def GetMergedEdges(project_id):
         ) as rated_edges
         inner join tbl_edges on tbl_edges.uuid = rated_edges.uuid
         inner join tbl_nodes as source on source.id = tbl_edges.source_id
-        inner join tbl_nodes as target on target.id = tbl_edges.target_id"""
+        inner join tbl_nodes as target on target.id = tbl_edges.target_id
+        order by source.node_name, target.node_name, tbl_edges.id"""
     
     cursor.execute(query)
-    merged_edges = pd.DataFrame(cursor.fetchall(), columns = ["id", "source", "target", "merge_coef"])
+    merged_edges = pd.DataFrame(cursor.fetchall(), columns = ["id", "source", "target", "deleted", "table_id"])
     return merged_edges
 
 #Получить датафрейм ребер из базы в зависимости от этапа проекта
@@ -133,13 +144,16 @@ def GetProjectDfs(project_data, user_id):
     nodes_df = GetNodes(project_data["id"])
     edges_df = GetProjectEdges(project_data, user_id)
 
-    nodes_df, edges_df = ExcludeDeletedElements(nodes_df, edges_df, project_data, "delete")
+    nodes_df, edges_df = ExcludeDeletedElements(nodes_df, edges_df, "delete")
     nodes_df = GetNodeLevels(nodes_df, edges_df)
+
+    print(nodes_df)
+    print(edges_df)
 
     return nodes_df, edges_df
 
 #Очистить датафреймы вершин и ребер от удаленных элементов
-def ExcludeDeletedElements(nodes_df, edges_df, project_data, type):
+def ExcludeDeletedElements(nodes_df, edges_df, type):
     if len(nodes_df):
         head_id = nodes_df.loc[~nodes_df["id"].isin(edges_df["target"])].iloc[0]["id"]
 
@@ -147,21 +161,11 @@ def ExcludeDeletedElements(nodes_df, edges_df, project_data, type):
             nodes_df["classes"] = "default"
             edges_df["classes"] = "default"
 
-            if project_data["status"]["code"] == "dep_eval": edges_df.loc[edges_df["deleted"] == True, "classes"] = "deleted"
-
-            if project_data["status"]["code"] in ["comp_eval", "completed"]:
-                if project_data["merge_coef"] > 0: edges_df.loc[edges_df["merge_coef"] < project_data["merge_coef"], "classes"] = "deleted"
-                else: edges_df.loc[edges_df["merge_coef"] == project_data["merge_coef"], "classes"] = "deleted"
-
+            edges_df.loc[edges_df["deleted"] == True, "classes"] = "deleted"
             nodes_df.loc[~nodes_df["id"].isin(edges_df["target"]) & (nodes_df["id"] != head_id), "classes"] = "deleted"
 
         if type == "delete":
-            if project_data["status"]["code"] == "dep_eval": edges_df.drop(edges_df.loc[edges_df["deleted"] == True].index, inplace = True)
-
-            if project_data["status"]["code"] in ["comp_eval", "completed"]:
-                if project_data["merge_coef"] > 0: edges_df.drop(edges_df.loc[edges_df["merge_coef"] < project_data["merge_coef"]].index, inplace = True)
-                else: edges_df.drop(edges_df.loc[edges_df["merge_coef"] == project_data["merge_coef"]].index, inplace = True)
-
+            edges_df.drop(edges_df.loc[edges_df["deleted"] == True].index, inplace = True)
             nodes_df.drop(nodes_df.loc[~nodes_df["id"].isin(edges_df["target"]) & (nodes_df["id"] != head_id)].index, inplace = True)
 
 
@@ -169,8 +173,7 @@ def ExcludeDeletedElements(nodes_df, edges_df, project_data, type):
 
 #Дополнить датафрейм с элементами иерархии колонкой с их уровнями
 def GetNodeLevels(nodes_df, edges_df):
-    levels = [0] * len(nodes_df)
-    nodes_df["level"] = levels
+    nodes_df["level"] = 0
 
     if len(nodes_df):
         head_id = nodes_df.loc[~nodes_df["id"].isin(edges_df["target"])].iloc[0]["id"]
@@ -205,6 +208,7 @@ def GetHierarchyPreset(nodes_df, edges_df):
                 node_data["width"] = 0
                 node_data["height"] = 0
                 node_data["level"] = level
+                node_data["table_id"] = row["table_id"]
 
                 node_position = {}
                 node_position["x"] = 0
@@ -226,6 +230,7 @@ def GetHierarchyPreset(nodes_df, edges_df):
             edge_data["id"] = row["id"]
             edge_data["source"] = row["source"]
             edge_data["target"] = row["target"]
+            edge_data["table_id"] = row["table_id"]
 
             edge_object = {}
             edge_object["data"] = edge_data
@@ -708,7 +713,7 @@ def GetUserCompdata(source_node_id, user_id):
         inner join tbl_nodes n1 on n1.id = e1.target_id
         inner join tbl_nodes n2 on n2.id = e2.target_id
         where ed1.user_id = {user_id} and n0.uuid = '{source_node_id}'
-        order by t1_node_name"""
+        order by t1_node_name, t2_node_name, tbl_compdata.id"""
     
     cursor.execute(query)
     compdata = pd.DataFrame(cursor.fetchall(), columns = ["source_node_name", "t1_node_name", "t2_node_name", "superior", "code", "table_id"]).to_dict("records")
@@ -1377,54 +1382,67 @@ def RemoveCompletedState(project_data):
 #Страница аналитики ----------------------------------------------------------------------------------------------------
 
 def GetAnalyticsTreeData(project_id, use_groups):
-    if use_groups:
-        query = f"""select group_name, tbl_groups.id, user_name, tbl_users.id
-            from tbl_groups
-            inner join tbl_groupdata on tbl_groupdata.group_id = tbl_groups.id
-            inner join tbl_userdata on tbl_userdata.user_id = tbl_groupdata.user_id
-            inner join tbl_users on tbl_userdata.user_id = tbl_users.id
-            where tbl_userdata.project_id = {project_id} and tbl_userdata.ce_completed = true
-            order by group_name, user_name"""
-    else:
-        query = f"""select user_name, tbl_users.id
-            from tbl_users
-            inner join tbl_userdata on tbl_userdata.user_id = tbl_users.id
-            inner join tbl_roles on tbl_userdata.role_id = tbl_roles.id
-            where tbl_userdata.project_id = {project_id} and 
-            tbl_userdata.de_completed = true and
-            access_level > 1
-            order by user_name"""
-        
-        cursor.execute(query)
-        treedata = pd.DataFrame(cursor.fetchall(), columns = ["value", "label"])
-
-#Получить элементы дерева проекта
-def GetProjectTreeData(project_id, use_groups):
-    if use_groups:
-        #userdata.drop(["id", "login", "name", "role", "access_level", "de_completed", "ce_completed"], axis = 1, inplace = True)
-        a = 0
-    else:
-        userdata = GetProjectUserdata(project_id)
-        userdata.drop(userdata[(userdata["de_completed"] == False) | (userdata["role"] == "spectator")].index, inplace = True)
-        userdata.drop(["login", "role", "access_level", "de_completed", "ce_completed"], axis = 1, inplace = True)
-        userdata = userdata.to_dict("records")
-
-        user_elements = []
-        for user in userdata:
-            element = {}
-            element["label"] = GetShortUsername(user["name"])
-            element["value"] = f"project/user/{user['id']}"
-            user_elements.append(element)
-
-        data = [
-            {
-                "value": "project",
-                "label": "Проект",
-                "children": user_elements
-            }
-        ]
+    query = f"""select 
+        tbl_users.id, 
+        tbl_users.user_name, 
+        (select coalesce(tbl_groups.id, 0)) AS group_id,
+        (select coalesce(tbl_groups.group_name, 'Нет группы')) AS group_name
+        from tbl_userdata
+        inner join tbl_users on tbl_users.id = tbl_userdata.user_id
+        left outer join tbl_groupdata on tbl_groupdata.user_id = tbl_users.id
+        left outer join tbl_groups on tbl_groupdata.group_id = tbl_groups.id
+        where tbl_userdata.project_id = {project_id} and 
+        tbl_userdata.de_completed = true and 
+        (tbl_groups.project_id is null or tbl_groups.project_id = {project_id})
+        order by group_name, user_name"""
     
-    return data
+    cursor.execute(query)
+    treedata = pd.DataFrame(cursor.fetchall(), columns = ["user_id", "user_name", "group_id", "group_name"])
+
+    if use_groups:
+        group_df = treedata.drop(["user_id", "user_name"], axis = 1).drop_duplicates()
+        project_children = []
+        for index, group_row in group_df.iterrows():
+            if group_row["group_id"] == 0: continue
+
+            group_item = {}
+            group_item["label"] = GetShortUsername(group_row["name"])
+            group_item["value"] = "project/group/" + str(group_row["id"])
+            group_item["children"] = []
+            for index, user_row in treedata.loc[treedata["group_id"] == group_row['id']]:
+                user_item = {}
+                user_item["label"] = GetShortUsername(user_row["user_name"])
+                user_item["value"] = group_item["value"] + "/user/" + {user_row["user_id"]}
+                group_item["children"].append(user_item)
+            project_children.append(group_item)
+
+        without_group_df = treedata[treedata["group_id"] == 0]
+        if len(without_group_df):
+            ungrouped = {}
+            ungrouped["label"] = "Нет группы"
+            ungrouped["value"] = "project/group/0"
+            ungrouped["children"] = []
+            for index, user_row in without_group_df.iterrows():
+                user_item = {}
+                user_item["label"] = GetShortUsername(user_row["user_name"])
+                user_item["value"] = ungrouped["value"] + "/user/" + {user_row["user_id"]}
+                ungrouped["children"].append(user_item)
+            project_children.append(ungrouped)
+
+    else:
+        treedata.drop(["group_id", "group_name"], axis = 1, inplace = True)
+        treedata.sort_values(by = "user_name", inplace = True)
+
+        project_children = []
+        for index, user_row in treedata.iterrows():
+            user_item = {}
+            user_item["label"] = GetShortUsername(user_row["user_name"])
+            user_item["value"] = "project/user/" + str(user_row["user_id"])
+            project_children.append(user_item)
+
+    return project_children
+
+
 
 
 #Служебные функции ----------------------------------------------------------------------------------------------------
@@ -1441,6 +1459,7 @@ def ElementsToDfs(elements):
             df_row["source"] = element["data"]["source"]
             df_row["target"] = element["data"]["target"]
             df_row["deleted"] = False
+            df_row["table_id"] = element["data"]["table_id"]
             df_row["classes"] = element["classes"]
 
             edge_list.append(df_row)
@@ -1451,6 +1470,7 @@ def ElementsToDfs(elements):
             df_row["width"] = element["data"]["width"]
             df_row["height"] = element["data"]["height"]
             df_row["level"] = element["data"]["level"]
+            df_row["table_id"] = element["data"]["table_id"]
             df_row["classes"] = element["classes"]
 
             node_list.append(df_row)
@@ -1605,26 +1625,30 @@ def MakeSimpleGrid(superiority_data):
     source_node_name = superiority_data[0]["source_node_name"]
     superiority_data = pd.DataFrame(superiority_data)
     targret_node_names = list(set(list(superiority_data["t1_node_name"]) + list(superiority_data["t2_node_name"])))
+    targret_node_names.sort()
     superiority_data = superiority_data.to_dict("records")
 
 
     matrix_dim = len(targret_node_names)
 
     simple_grid_children = [0] * pow(matrix_dim + 1, 2)
-    simple_grid_children[0] = dmc.Center(dmc.Text(source_node_name, className='hi-cell-caption'), className="hi-cell-root") #корень 
-    #dmc.Box(source_node_name) #корень
-    for index, targret_node_name in enumerate(targret_node_names): 
-        simple_grid_children[index + 1] = dmc.Box(dmc.Text(targret_node_name, className='hi-cell-caption'), className="hi-cell-up") #верхние 
-        #dmc.Box(targret_node_name) #верхние
-        simple_grid_children[(matrix_dim + 2) * (index + 1)] = dmc.Center(dmc.Text("1"), className="hi-cell-ro") #диагональ
-        #dmc.Box("1") #диагональ
-        simple_grid_children[(matrix_dim + 1) * (index + 1)] = dmc.Box(dmc.Text(targret_node_name, className='hi-cell-caption'), className="hi-cell-left") #слева
-        #dmc.Box(targret_node_name) #слева
+    for index, value in enumerate(simple_grid_children):
+        simple_grid_children[index]=dmc.Box("")
 
-    list_index = matrix_dim + 3
+    simple_grid_children[0] = dmc.Center(dmc.Text(source_node_name, truncate='end', pl=5), className="hi-cell-root") #корень 
+    for index, targret_node_name in enumerate(targret_node_names): 
+        simple_grid_children[index + 1] = dmc.Center(dmc.Text(targret_node_name, truncate='end', pl=5), className="hi-cell-up") #верхние 
+        simple_grid_children[(matrix_dim + 2) * (index + 1)] = dmc.Center(dmc.Text("1"), className="hi-cell-ro") #диагональ
+        simple_grid_children[(matrix_dim + 1) * (index + 1)] = dmc.Center(dmc.Text(targret_node_name, truncate='end', pl=5), className="hi-cell-left") #слева
+    
+    maxtrix_offset = 3
+    list_index = matrix_dim + maxtrix_offset
+    opp_index = matrix_dim + maxtrix_offset - 1
     for index, superiority_data_item in enumerate(superiority_data):
-        opp_index = list_index + (index % 2 + 1) * matrix_dim
-        print(index, list_index, opp_index)
+        
+        #opp_index = list_index + (index % 2 + 1) * matrix_dim
+        opp_index+=matrix_dim+1
+        
         if superiority_data_item["superior"]: 
             simple_grid_children[list_index] = dmc.Box(dmc.Button(id = {"type": "upper_node", "index": superiority_data_item["table_id"]}, children = str(superiority_data_item["code"]), radius=0, className="hi-cell-btn"), className="hi-cell")
             simple_grid_children[opp_index] = dmc.Box(dmc.Button(id = {"type": "lower_node", "index": superiority_data_item["table_id"]}, children = "1/" + str(superiority_data_item["code"]) if str(superiority_data_item["code"]) != "1" else "1", radius=0, className="hi-cell-btn"), className="hi-cell")
@@ -1632,7 +1656,81 @@ def MakeSimpleGrid(superiority_data):
             simple_grid_children[list_index] = dmc.Box(dmc.Button(id = {"type": "upper_node", "index": superiority_data_item["table_id"]}, children = "1/" + str(superiority_data_item["code"]) if str(superiority_data_item["code"]) != "1" else "1", radius=0, className="hi-cell-btn"), className="hi-cell")
             simple_grid_children[opp_index] = dmc.Box(dmc.Button(id = {"type": "lower_node", "index": superiority_data_item["table_id"]}, children = str(superiority_data_item["code"]), radius=0, className="hi-cell-btn"), className="hi-cell")
 
-        if list_index % (matrix_dim + 1) != 0: list_index += 1
-        else: list_index += matrix_dim - 1
+        list_index += 1
+        if list_index % (matrix_dim + 1) == 0:
+            maxtrix_offset+=1 
+            list_index += maxtrix_offset-1
+            opp_index = list_index - 1
+
 
     return dmc.SimpleGrid(cols = matrix_dim + 1, spacing = '0', verticalSpacing = '0', children = simple_grid_children)
+
+def MakeMatrix(superiority_data):
+    matrix = []
+
+    matrix_dim = (1 + int(pow(1 + 8 * len(superiority_data), 0.5))) // 2
+
+    for i in range(matrix_dim):
+        matrix_row = []
+        for j in range(matrix_dim): matrix_row.append([0])
+        matrix.append(matrix_row)
+
+    for i in range(matrix_dim): matrix[i][i] = 1.0
+
+    i = 0
+    j = 1
+    for item in superiority_data:
+        matrix[i][j] = round(item["code"] / 1, 3)
+        matrix[j][i] = round(1 / item["code"], 3)
+
+        j += 1
+        if j == matrix_dim:
+            i += 1
+            j = i + 1
+        
+    return matrix
+
+def GetLocalPriorities(matrix):
+    local_priorities = []
+
+    for i in range(len(matrix)):
+        geo_mean = 1.0
+        for j in range(len(matrix)):
+            geo_mean *= matrix[i][j]
+        geo_mean = pow(geo_mean, 1 / len(matrix))
+        local_priorities.append(geo_mean)
+
+    sum_geo_mean = sum(local_priorities)
+    for i in range(len(local_priorities)):
+        local_priorities[i] = round(local_priorities[i] / sum_geo_mean, 3)
+
+    return local_priorities
+
+
+
+
+def GetGlobalProrities(nodes_df, edges_df):
+    for level in range(1, nodes_df["level"].max() + 1):
+        level_df = nodes_df[nodes_df["level"] == level]
+        for lvl_index, lvl_row in level_df.iterrows():
+            incoming_edges = edges_df[edges_df["target"] == lvl_row["id"]]
+            outcoming_edges = edges_df[edges_df["source"] == lvl_row["id"]]
+
+            node_priority = 0
+            if level == 1: node_priority = 1
+
+            for index, row in incoming_edges.iterrows(): node_priority += row["global_priority"]
+            nodes_df[lvl_index, "priority"] = node_priority
+
+            for out_index, out_row in outcoming_edges.iterrows():
+                outcoming_edge_priority = 0
+                if level == 1: outcoming_edge_priority = out_row["local_priority"]
+
+                for inc_index, inc_row in incoming_edges.iterrows():
+                    node_priority += inc_row["global_priority"]
+                    outcoming_edge_priority += inc_row["global_priority"] * out_row["local_priority"]
+                edges_df[out_index, "global_priority"] = outcoming_edge_priority
+
+        return nodes_df, edges_df
+
+    

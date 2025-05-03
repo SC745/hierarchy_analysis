@@ -9,8 +9,6 @@ import os
 from flask import Flask, request, redirect, session
 from flask_login import login_user, LoginManager, UserMixin, logout_user, current_user
 
-import json
-
 
 _dash_renderer._set_react_version("18.2.0")
 
@@ -73,26 +71,6 @@ def Login(input):
         output["error_state"] = "block"
         
     return output
-
-
-@dash.callback(
-    Output({"type": "redirect", "index": MATCH}, "pathname", allow_duplicate = True),
-    Input({"type": "logout_button", "index": MATCH}, "n_clicks"),
-    prevent_initial_call = True
-)
-def Logout(clickdata):
-    if clickdata:
-        
-        if ctx.triggered_id["index"] == "project":
-            project_data = json.loads(session["project_data"])
-            element_data = json.loads(session["element_data"])
-            if project_data["status"]["stage"] == 1 and project_data["role"]["access_level"] > 2: functions.SaveInitialGraphToDB(element_data, project_data["id"])
-            if project_data["status"]["stage"] == 2 and project_data["role"]["access_level"] > 1: functions.SaveEdgedataToDB(element_data, project_data["id"], current_user.userdata["id"])
-
-        session.clear()
-        logout_user()
-
-        return "/login"
 
 
 if __name__ == '__main__':
