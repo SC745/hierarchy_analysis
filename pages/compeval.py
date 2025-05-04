@@ -33,7 +33,7 @@ def layout():
         return dcc.Location(id = {"type": "redirect", "index": "compeval"}, pathname = "/project")
     else:
         page_compeval = json.loads(session["page_compeval"])
-        comp_data = functions.GetUserCompdata(page_compeval["current_node_id"], current_user.userdata["id"])
+        comp_data = functions.GetUserCompdataForSimpleGrid(page_compeval["current_node_id"], current_user.userdata["id"])
         
         if len(comp_data)==0:
             return dcc.Location(id = {"type": "redirect", "index": "compeval"}, pathname = "/project")
@@ -104,9 +104,9 @@ def layout():
             return layout
 
 '''@dash.callback(
-    #Output("project_data_store", 'data', allow_duplicate = True),
-    #Output("element_data_store", 'data', allow_duplicate = True),
-    Output("comp_data_store", 'data', allow_duplicate = True),
+    #Output("project_data_store", "data", allow_duplicate = True),
+    #Output("element_data_store", "data", allow_duplicate = True),
+    Output("comp_data_store", "data", allow_duplicate = True),
     Input(component_id={'type': 'load_interval', 'index': 'compeval'}, component_property="n_intervals"),
     prevent_initial_call = True
     )

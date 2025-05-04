@@ -66,7 +66,8 @@ def layout():
                                     id = "project_table", 
                                     children = functions.CreateTableContent(["Название", "Этап", "Роль в проекте", "Ссылка"], functions.GetUserProjects(current_user.userdata["id"])),
                                     highlightOnHover = True,
-                                    withTableBorder = True
+                                    withTableBorder = True,
+                                    fz = "md"
                                 )
                             ],
                             gap = "xs"
@@ -93,7 +94,6 @@ def Logout(clickdata):
         session.clear()
         logout_user()
         return "/login"
-
 
 
 @dash.callback(

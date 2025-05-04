@@ -84,9 +84,9 @@ def layout():
                                                 dmc.MenuTarget(dmc.Text("Проект")),
                                                 dmc.MenuDropdown(
                                                     children = [
-                                                        dmc.MenuItem(id = {"type":"menu_navlink", "index":"/settings"}, leftSection = DashIconify(icon = "mingcute:settings-3-line"), children = "Настройки"),
-                                                        dmc.MenuItem(id = {"type":"menu_navlink", "index":"/analytics"}, leftSection = DashIconify(icon = "mingcute:chart-line-fill"), children = "Аналитика", disabled = project_data["status"]["stage"] < 3),
-                                                        dmc.MenuItem(id = "restore_initial_hierarchy", leftSection = DashIconify(icon = "mingcute:refresh-3-fill"), children = "Восстановить базовую иерархию"),
+                                                        dmc.MenuItem(id = {"type":"menu_navlink", "index":"/settings"}, leftSection = DashIconify(icon = "mingcute:settings-3-line"), children = "Настройки", disabled = project_data["role"]["access_level"] < 3),
+                                                        dmc.MenuItem(id = {"type":"menu_navlink", "index":"/analytics"}, leftSection = DashIconify(icon = "mingcute:chart-line-fill"), children = "Аналитика", disabled = project_data["status"]["stage"] < 4),
+                                                        dmc.MenuItem(id = "restore_initial_hierarchy", leftSection = DashIconify(icon = "mingcute:refresh-3-fill"), children = "Восстановить базовую иерархию", disabled = not (project_data["status"]["stage"] == 2 and project_data["role"]["access_level"] > 1)),
                                                         dmc.MenuDivider(),
                                                         dmc.MenuItem(id = {"type":"menu_navlink", "index":"/projects"}, leftSection = DashIconify(icon = "mingcute:list-check-fill"), children = "Список проектов")
                                                     ]
@@ -127,7 +127,6 @@ def layout():
                         )
                     ]
                 ),
-                dmc.AppShellNavbar("Navbar"),
                 dmc.AppShellAside(
                     children = [
                         dmc.Box(
@@ -137,8 +136,8 @@ def layout():
                                         dmc.ActionIcon(id = {"type": "step_button", "index": "rollback"}, children = DashIconify(icon = "mingcute:corner-down-left-fill", width = 20), size = "input-sm", variant = "default", disabled = True),
                                         dmc.ActionIcon(id = {"type": "step_button", "index": "cancelrollback"}, children = DashIconify(icon = "mingcute:corner-down-right-fill", width = 20), size = "input-sm", variant = "default", disabled = True),
                                         dmc.ActionIcon(id = "locate", children = DashIconify(icon = "mingcute:location-line", width = 20), size = "input-sm", variant = "default"),
-                                        dmc.ActionIcon(id = "add_node", children = DashIconify(icon = "mingcute:cross-line", width = 20), size = "input-sm", variant = "light", color = "green"),
-                                        dmc.ActionIcon(id = "save_graph", children = DashIconify(icon = "mingcute:save-2-line", width = 20), size = "input-sm", variant = "light"),
+                                        dmc.ActionIcon(id = "add_node", children = DashIconify(icon = "mingcute:cross-line", width = 20), size = "input-sm", variant = "light", disabled = True, color = "green"),
+                                        dmc.ActionIcon(id = "save_graph", children = DashIconify(icon = "mingcute:save-2-line", width = 20), size = "input-sm", variant = "light", disabled = True),
                                     ],
                                     grow=True,
                                     preventGrowOverflow=False,
@@ -273,31 +272,24 @@ def layout():
                 ]),
             ],
             header={"height": "30px"},
-            navbar={"width": "300px"},
             aside={"width": "300px"},
         )
         layout = dmc.MantineProvider(layout)
         return layout
 
-'''@dash.callback(
-    Output("project_data_store", 'data', allow_duplicate = True),
-    Output("element_data_store", 'data', allow_duplicate = True),
-    Input(component_id={'type': 'load_interval22222', 'index': 'project'}, component_property="n_intervals"),
-    prevent_initial_call = True
-    )
-def update_spanner(n_intervals:int):
-    page_project = json.loads(session["page_project"])
-    project_data = functions.GetProjectData(current_user.userdata["id"], page_project["project_id"])
-    element_data = functions.GetElementData(project_data, current_user.userdata["id"])
-    return json.dumps(project_data, cls = functions.NpEncoder), json.dumps(element_data, cls = functions.NpEncoder)
-'''
-#Навигация ----------------------------------------------------------------------------------------------------
+
+
+
+#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#Навигация ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 
 @dash.callback(
     Output({"type": "redirect", "index": "project"}, "pathname", allow_duplicate = True),
     Input({"type": "logout_button", "index": "project"}, "n_clicks"),
-    State("project_data_store", 'data'),
-    State("element_data_store", 'data'),
+    State("project_data_store", "data"),
+    State("element_data_store", "data"),
     prevent_initial_call = True
 )
 def Logout(clickdata, project_data_store, element_data_store):
@@ -310,12 +302,13 @@ def Logout(clickdata, project_data_store, element_data_store):
         logout_user()
         return "/login"
 
+
 @dash.callback(
     Output({"type": "redirect", "index": "project"}, "pathname", allow_duplicate = True),
     Output("current_node_id", "data", allow_duplicate = True),
     Input({"type": "menu_navlink", "index": ALL}, "n_clicks"),
-    State("project_data_store", 'data'),
-    State("element_data_store", 'data'),
+    State("project_data_store", "data"),
+    State("element_data_store", "data"),
     prevent_initial_call = True
 )
 def RedirectMenuItems(clickdata, project_data_store, element_data_store):
@@ -359,21 +352,26 @@ def RedirectToNodeCompEval(clickdata, current_node_id):
         session["page_compeval"] = json.dumps(page_compeval, cls = functions.NpEncoder)
         return "/compeval"
 
-#Граф и панель инструментов ----------------------------------------------------------------------------------------------------
+
+
+
+#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#Граф и панель инструментов -------------------------------------------------------------------------------------------------------------------------------------------------------------
+#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 
 def SaveGraphToBD(project_data, element_data):
     if project_data["status"]["stage"] == 1 and project_data["role"]["access_level"] > 2: return functions.SaveInitialGraphToDB(element_data, project_data["id"])
     if project_data["status"]["stage"] == 2 and project_data["role"]["access_level"] > 1: return functions.SaveEdgedataToDB(element_data, project_data["id"], current_user.userdata["id"])
 
 
-
 @dash.callback(
     Output("graph", "elements", allow_duplicate = True),
     Output("prev_action", "data", allow_duplicate = True),
-    Output("element_data_store", 'data', allow_duplicate = True),
+    Output("element_data_store", "data", allow_duplicate = True),
     Input("save_graph", "n_clicks"),
-    State("project_data_store", 'data'),
-    State("element_data_store", 'data'),
+    State("project_data_store", "data"),
+    State("element_data_store", "data"),
     prevent_initial_call = True
 )
 def SaveGraph(clickdata, project_data_store, element_data_store):
@@ -398,7 +396,7 @@ def SaveGraph(clickdata, project_data_store, element_data_store):
         "edge_checkboxes": Output("edge_checkboxes", "children"),
         "elements": Output("graph", "elements", allow_duplicate = True),
         "prev_action": Output("prev_action", "data", allow_duplicate = True),
-        "element_data": Output("element_data_store", 'data', allow_duplicate = True),
+        "element_data": Output("element_data_store", "data", allow_duplicate = True),
     },
     inputs = {
         "input": {
@@ -408,8 +406,8 @@ def SaveGraph(clickdata, project_data_store, element_data_store):
         }
     },
     state=dict(
-        project_data_store=State("project_data_store", 'data'),
-        element_data_store=State("element_data_store", 'data'),
+        project_data_store=State("project_data_store", "data"),
+        element_data_store=State("element_data_store", "data"),
     ),
     prevent_initial_call = True
 )
@@ -452,12 +450,12 @@ def SelectElement(input, project_data_store, element_data_store):
 @dash.callback(
     Output("graph", "elements", allow_duplicate = True),
     Output("prev_action", "data", allow_duplicate = True),
-    Output("element_data_store", 'data', allow_duplicate = True),
+    Output("element_data_store", "data", allow_duplicate = True),
     Input("node_checkbox", "checked"),
     Input({"type": "edge_checkbox", "index": ALL}, "checked"),
     State("current_node_id", "data"),
     State("prev_action", "data"),
-    State("element_data_store", 'data'),
+    State("element_data_store", "data"),
     prevent_initial_call = True
 )
 def CheckboxClick(node_checked, edge_checked, current_node_id, prev_action, element_data_store):
@@ -491,11 +489,11 @@ def CheckboxClick(node_checked, edge_checked, current_node_id, prev_action, elem
 @dash.callback(
     Output("graph", "elements", allow_duplicate = True),
     Output("prev_action", "data", allow_duplicate = True),
-    Output("element_data_store", 'data', allow_duplicate = True),
+    Output("element_data_store", "data", allow_duplicate = True),
     Input("name_input", "value"),
     State("current_node_id", "data"),
     State("prev_action", "data"),
-    State("element_data_store", 'data'),
+    State("element_data_store", "data"),
     prevent_initial_call = True
 )
 def ChangeNodeName(new_name, current_node_id, prev_action, element_data_store):
@@ -518,9 +516,9 @@ def ChangeNodeName(new_name, current_node_id, prev_action, element_data_store):
 @dash.callback(
     Output("graph", "elements", allow_duplicate = True),
     Output("prev_action", "data", allow_duplicate = True),
-    Output("element_data_store", 'data', allow_duplicate = True),
+    Output("element_data_store", "data", allow_duplicate = True),
     Input({"type": "step_button", "index": ALL}, "n_clicks"),
-    State("element_data_store", 'data'),
+    State("element_data_store", "data"),
     prevent_initial_call = True
 )
 def StepButtons(clickdata, element_data_store):
@@ -565,10 +563,10 @@ def StepButtons(clickdata, element_data_store):
     Output("graph", "elements", allow_duplicate = True),
     Output("current_node_id", "data", allow_duplicate = True),
     Output("prev_action", "data", allow_duplicate = True),
-    Output("element_data_store", 'data', allow_duplicate = True),
+    Output("element_data_store", "data", allow_duplicate = True),
     Input("add_node", "n_clicks"),
     State("current_node_id", "data"),
-    State("element_data_store", 'data'),
+    State("element_data_store", "data"),
     prevent_initial_call = True
 )
 def AddNewNode(clickdata, current_node_id, element_data_store):
@@ -596,8 +594,6 @@ def AddNewNode(clickdata, current_node_id, element_data_store):
         "cancelrollback_disabled": Output({"type": "step_button", "index": "cancelrollback"}, "disabled"),
         "addnode_disabled": Output("add_node", "disabled"),
         "save_graph": Output("save_graph", "disabled"),
-        "hierarchyrestore_disabled": Output("restore_initial_hierarchy", "disabled"),
-        "projectsettings_disabled": Output({"type":"menu_navlink", "index":"/settings"}, "disabled"),
     },
     inputs = {
         "input": {
@@ -606,8 +602,8 @@ def AddNewNode(clickdata, current_node_id, element_data_store):
         }
     },
     state=dict(
-        project_data_store=State("project_data_store", 'data'),
-        element_data_store=State("element_data_store", 'data'),
+        project_data_store=State("project_data_store", "data"),
+        element_data_store=State("element_data_store", "data"),
     ),
     prevent_initial_call = True 
 )
@@ -624,8 +620,6 @@ def ElementChangeProcessing(input, project_data_store, element_data_store):
     output["cancelrollback_disabled"] = not bool(len(element_data["steps"]["canceled"]))
     output["addnode_disabled"] = not ((bool(element_data["state"]["selected"]) or not bool(len(element_data["elements"]))) and project_data["status"]["stage"] == 1 and project_data["role"]["access_level"] > 2)
     output["save_graph"] = (project_data["status"]["stage"] == 1 and project_data["role"]["access_level"] < 3) or (project_data["status"]["stage"] == 2 and project_data["role"]["access_level"] < 2) or project_data["status"]["stage"] > 2
-    output["hierarchyrestore_disabled"] = not (project_data["status"]["stage"] == 2 and project_data["role"]["access_level"] > 1)
-    output["projectsettings_disabled"] = not (project_data["role"]["access_level"] > 2)
 
     if current_node: 
         output["placeholder_display"] = "none"
@@ -639,13 +633,18 @@ def ElementChangeProcessing(input, project_data_store, element_data_store):
     return output
 
 
-#Выпадающее меню ----------------------------------------------------------------------------------------------------
+
+
+#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#Выпадающее меню ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 
 @dash.callback(
     Output("current_node_id", "data", allow_duplicate = True),
-    Output("element_data_store", 'data', allow_duplicate = True),
+    Output("element_data_store", "data", allow_duplicate = True),
     Input("restore_initial_hierarchy", "n_clicks"),
-    State("project_data_store", 'data'),
+    State("project_data_store", "data"),
     prevent_initial_call = True
 )
 def RestoreInitialHierarchy(clickdata, project_data_store):
@@ -662,10 +661,10 @@ def RestoreInitialHierarchy(clickdata, project_data_store):
 
 @dash.callback(
     Output("graph", "elements", allow_duplicate = True),
-    Output("project_data_store", 'data', allow_duplicate = True),
+    Output("project_data_store", "data", allow_duplicate = True),
     Input({"type": "stage_completed", "index": ALL}, "checked"),
-    State("project_data_store", 'data'),
-    State("element_data_store", 'data'),
+    State("project_data_store", "data"),
+    State("element_data_store", "data"),
     prevent_initial_call = True
 )
 def CompletedCheckboxes(checked, project_data_store, element_data_store):
@@ -683,7 +682,3 @@ def CompletedCheckboxes(checked, project_data_store, element_data_store):
 
     return element_data["elements"], json.dumps(project_data, cls = functions.NpEncoder)
 
-    #Output("project_data_store", 'data', allow_duplicate = True),
-    #Output("element_data_store", 'data', allow_duplicate = True),
-    #State("project_data_store", 'data'),
-    #State("element_data_store", 'data'),

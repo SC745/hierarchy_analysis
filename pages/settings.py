@@ -24,9 +24,16 @@ merge_radiogroupdata = {
 }
 
 competence_radiogroupdata = {
-    "Постоянный": {"description": "Компетентность эксперта при оценке связей постоянна"},
+    "Постоянный": {"description": "Компетентность эксперта при оценке связей одинакова"},
     "Настраиваемый": {"description": "Установить компетентность эксперта для оценки каждой связи"},
 }
+
+groupmanage_radiogroupdata = {
+    "Список групп": {"description": "Добавить или удалить группы из проекта"},
+    "Состав групп": {"description": "Редактировать состав групп"},
+}
+
+
 
 def MakeRadioCard(label, description):
     return dmc.RadioCard(
@@ -261,7 +268,7 @@ def layout():
                                 dmc.Flex(
                                     children = [
                                         dmc.Text("Управление компетентностью", fz = 24, fw = 500, pb = "sm"),
-                                        dmc.ActionIcon(id = "save_user_competence", children = DashIconify(icon = "mingcute:save-2-line", width = 26), size = "input-md"),
+                                        dmc.ActionIcon(id = "save_project_competence", children = DashIconify(icon = "mingcute:save-2-line", width = 26), disabled = not project_data["const_comp"], size = "input-md"),
                                     ],
                                     align = "flex-end",
                                     justify = "space-between"
@@ -280,9 +287,10 @@ def layout():
                                 dmc.Text("Настройка постоянной компетентности пользователей" if project_data["const_comp"] else "Настройка компетентности пользователя при оценке связи", fz = "xl", fw = 500, pb = "xs", id = "competence_type_message"),
                                 dmc.Box(
                                     children = [
+                                        dmc.Checkbox(id = "group_checkbox_project", label = "Использовать группы", size = "md", fw = 500, pb = "xs"),
                                         dmc.Table(
-                                            id = "user_competence_table",
-                                            children = functions.CreateTableContent(["Пользователь", "Компетентность"], functions.GetUserCompetenceData(project_data["id"])),
+                                            id = "project_competence_table",
+                                            children = functions.CreateTableContent(["Пользователь", "Компетентность"], functions.GetUserProjectCompetenceData(project_data["id"])),
                                             highlightOnHover = True,
                                             withTableBorder = True,
                                             fz = "md"
@@ -296,7 +304,7 @@ def layout():
                                         dmc.Text("Настройка данного типа недоступна на этапе построения базовой иерархии", id = "edge_competence_message", fz = "lg", fw = 500, pb = "xs", display = "block" if project_data["status"]["code"] == "initial" else "none"),
                                         dmc.Box(
                                             children = [
-                                                dmc.Checkbox(id = "group_checkbox", label = "Использовать группы", size = "md", fw = 500, pb = "xs"),
+                                                dmc.Checkbox(id = "group_checkbox_edge", label = "Использовать группы", size = "md", fw = 500, pb = "xs"),
                                                 dmc.Flex(
                                                     children = [
                                                         dmc.Select(id = "competence_select", data = functions.GetSelectData("competence_select", project_data["id"]), label = "Пользователь", searchable = True, size = "md", w = 350),
@@ -328,7 +336,27 @@ def layout():
                             p = "sm",
                         ),
                         dmc.Box(
-                            children = [],
+                            children = [
+                                dmc.Text("Управление пользователями", fz = 24, fw = 500, pb = "sm"),
+                                dmc.Box(
+                                    children = [
+                                        dmc.Text("Тип настройки", fz = "xl", fw = 500, pb = "sm"),
+                                        dmc.RadioGroup(
+                                            id = "groupmanage_radiogroup",
+                                            value = "Список групп",
+                                            children = [MakeRadioCard(key, groupmanage_radiogroupdata[key]["description"]) for key in groupmanage_radiogroupdata.keys()],
+                                            w = 550
+                                        ),
+                                        dmc.Table(
+                                            id = "group_table",
+                                            children = functions.CreateTableContent(["Группа", "Удалить"], functions.GetUserProjectCompetenceData(project_data["id"])),
+                                            highlightOnHover = True,
+                                            withTableBorder = True,
+                                            fz = "md"
+                                        )
+                                    ]
+                                ),
+                            ],
                             id = {"type": "settings_page", "index": "groups"},
                             display = "none",
                             p = "sm",
@@ -344,24 +372,13 @@ def layout():
     layout = dmc.MantineProvider(layout)
     return layout
 
-'''@dash.callback(
-    Output("project_data_store", 'data', allow_duplicate = True),
-    Output("element_data_store", 'data', allow_duplicate = True),
-    Input(component_id={'type': 'load_interval2222', 'index': 'settings'}, component_property="n_intervals"),
-    prevent_initial_call = True
-    )
-def update_spanner(n_intervals:int):
-    page_settings = json.loads(session["page_settings"])
-    project_data = functions.GetProjectData(current_user.userdata["id"], page_settings["project_id"])
-    element_data = functions.GetElementData(project_data, current_user.userdata["id"])
-    return json.dumps(project_data, cls = functions.NpEncoder), json.dumps(element_data, cls = functions.NpEncoder)
-'''
 
-    #Output("project_data_store", 'data', allow_duplicate = True),
-    #State("project_data_store", 'data'),
-    #project_data = json.loads(project_data_store)
 
-#Навигация ----------------------------------------------------------------------------------------------------
+
+#-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#Навигация -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 
 @dash.callback(
     Output({"type": "redirect", "index": "settings"}, "pathname", allow_duplicate = True),
@@ -373,7 +390,6 @@ def Logout(clickdata):
         session.clear()
         logout_user()
         return "/login"
-
 
 @dash.callback(
     output = {
@@ -417,7 +433,6 @@ def NavlinkClick(input):
 
     return output
 
-
 @dash.callback(
     Output({"type": "redirect", "index": "settings"}, "pathname", allow_duplicate = True),
     Input("settings_to_project", "n_clicks"),
@@ -435,7 +450,12 @@ def RedirectToProject(clickdata):
         return "/project"
 
 
-#Управление проектом ----------------------------------------------------------------------------------------------------
+
+
+#-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#Управление проектом ---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 
 @dash.callback(
     Output("mergevalue_slider", "value"),
@@ -450,11 +470,10 @@ def MergemethodChoice(method, slider_value):
 
     return slider_value, slider_disabled
 
-
 @dash.callback(
-    Output("project_data_store", 'data', allow_duplicate = True),
+    Output("project_data_store", "data", allow_duplicate = True),
     Input("mergevalue_slider", "value"),
-    State("project_data_store", 'data'),
+    State("project_data_store", "data"),
     running = [Output("mergevalue_slider", "disabled"), True],
     prevent_initial_call = True
 )
@@ -466,12 +485,11 @@ def MergevalueChoice(slider_value, project_data_store):
     
     return json.dumps(project_data, cls = functions.NpEncoder)
 
-
 @dash.callback(
-    Output("project_data_store", 'data', allow_duplicate = True),
+    Output("project_data_store", "data", allow_duplicate = True),
     Input("rename_project", "n_clicks"),
     State("project_name_input", "value"),
-    State("project_data_store", 'data'),
+    State("project_data_store", "data"),
     prevent_initial_call = True
 )
 def RenameProject(clickdata, project_name, project_data_store):
@@ -482,15 +500,14 @@ def RenameProject(clickdata, project_name, project_data_store):
 
     return json.dumps(project_data, cls = functions.NpEncoder)
 
-
 @dash.callback(
     Output("status_select", "value", allow_duplicate = True),
     Output("task_table", "children"),
-    Output("project_data_store", 'data', allow_duplicate = True),
+    Output("project_data_store", "data", allow_duplicate = True),
     Input({"type": "status_change", "index": ALL}, "n_clicks"),
     State("status_select", "value"),
     State("status_select", "data"),
-    State("project_data_store", 'data'),
+    State("project_data_store", "data"),
     prevent_initial_call = True
 )
 def ChangeProjectStatus(clickdata, old_status, select_data, project_data_store):
@@ -504,14 +521,13 @@ def ChangeProjectStatus(clickdata, old_status, select_data, project_data_store):
 
     new_status_code = select_data.loc[select_data.loc[select_data["value"] == old_status].index[0] + direction, "value"]
     new_status = functions.GetStatusByCode(new_status_code)
-    if functions.UpdateProjectStatus(new_status, project_data):
+    if functions.UpdateProjectStatus(new_status, project_data, current_user.userdata["id"]):
         project_data["status"] = new_status
     else: raise PreventUpdate
 
     task_table_content = functions.CreateTableContent(["Имя", "Оценка зависимостей", "Сравнительная оценка"], functions.GetTaskTableData(project_data["id"]))
 
     return new_status_code, task_table_content, json.dumps(project_data, cls = functions.NpEncoder)
-
 
 @dash.callback(
     Output({"type": "status_change", "index": "prev"}, "disabled"),
@@ -525,12 +541,11 @@ def StatusButtonState(project_status):
 
     return prev_status_disabled, next_status_disabled
 
-
 @dash.callback(
     Output({"type": "redirect", "index": "settings"}, "pathname", allow_duplicate = True),
-    Output("project_data_store", 'data', allow_duplicate = True),
+    Output("project_data_store", "data", allow_duplicate = True),
     Input("delete_project", "n_clicks"),
-    State("project_data_store", 'data'),
+    State("project_data_store", "data"),
     prevent_initial_call = True
 )
 def DeleteProject(clickdata, project_data_store):
@@ -543,7 +558,11 @@ def DeleteProject(clickdata, project_data_store):
     raise PreventUpdate
 
 
-#Управление пользователями ----------------------------------------------------------------------------------------------------
+
+
+#-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#Управление пользователями ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 @dash.callback(
     Output("role_select", "value"),
@@ -554,7 +573,7 @@ def DeleteProject(clickdata, project_data_store):
     Input("user_select", "value"),
     Input("role_select", "value"),
     State("role_select", "data"),
-    State("project_data_store", 'data'),
+    State("project_data_store", "data"),
     prevent_initial_call = True
 )
 def SelectUser(user_login, role_code, role_select_data, project_data_store):
@@ -580,13 +599,12 @@ def SelectUser(user_login, role_code, role_select_data, project_data_store):
 
     return role_code, role_select_data, role_select_disabled, add_user_disabled, change_role_disabled
 
-
 @dash.callback(
     Output("user_table", "children", allow_duplicate = True),
     Input("change_role", "n_clicks"),
     State("user_select", "value"),
     State("role_select", "value"),
-    State("project_data_store", 'data'),
+    State("project_data_store", "data"),
     prevent_initial_call = True
 )
 def ChangeRole(clickdata, user_login, role_code, project_data_store):
@@ -607,7 +625,6 @@ def ChangeRole(clickdata, user_login, role_code, project_data_store):
 
     raise PreventUpdate
 
-
 @dash.callback(
     Output("user_table", "children", allow_duplicate = True),
     Output("task_table", "children", allow_duplicate = True),
@@ -615,7 +632,7 @@ def ChangeRole(clickdata, user_login, role_code, project_data_store):
     Input("add_user", "n_clicks"),
     State("user_select", "value"),
     State("role_select", "value"),
-    State("project_data_store", 'data'),
+    State("project_data_store", "data"),
     prevent_initial_call = True
 )
 def AddUser(clickdata, user_login, role_code, project_data_store):
@@ -634,7 +651,6 @@ def AddUser(clickdata, user_login, role_code, project_data_store):
 
     raise PreventUpdate
 
-
 @dash.callback(
     Output("user_table", "children", allow_duplicate = True),
     Output("task_table", "children", allow_duplicate = True),
@@ -642,7 +658,7 @@ def AddUser(clickdata, user_login, role_code, project_data_store):
     Input({"type": "delete_button", "index": ALL}, "n_clicks"),
     State("user_select", "value"),
     State("role_select", "value"),
-    State("project_data_store", 'data'),
+    State("project_data_store", "data"),
     prevent_initial_call = True
 )
 def DeleteUser(clickdata, user_login, role_code, project_data_store):
@@ -665,7 +681,12 @@ def DeleteUser(clickdata, user_login, role_code, project_data_store):
     raise PreventUpdate
 
 
-#Управление компетентностью ----------------------------------------------------------------------------------------------------
+
+
+#-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#Управление компетентностью --------------------------------------------------------------------------------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 
 @dash.callback(
     output = {
@@ -680,36 +701,34 @@ def DeleteUser(clickdata, user_login, role_code, project_data_store):
             "source_node_select": Output("source_node_select", "value"),
         },
         "message": Output("competence_type_message", "children"),
-        "project_data_store": Output("project_data_store", 'data', allow_duplicate = True), 
+        "project_data_store": Output("project_data_store", "data", allow_duplicate = True),
+        "user_competence_disabled": Output("save_project_competence", "disabled"),
     },
     inputs = {
         "input": {
             "competence_type": Input("competence_radiogroup", "value"),
+            "project_data_store": State("project_data_store", "data"),
         }
     },
-    state=dict(
-        project_data_store=State("project_data_store", 'data'),
-    ),
     prevent_initial_call = True
 )
-def CompetenceTypeChoice(input, project_data_store):
+def CompetenceTypeChoice(input):
 
-    if project_data_store == None: raise PreventUpdate
-    project_data = json.loads(project_data_store)
+    if input["project_data_store"] == None: raise PreventUpdate
+    project_data = json.loads(input["project_data_store"])
 
     display = {}
     if input["competence_type"] == "Постоянный":
         display["user_competence_container"] = "block"
         display["edge_competence_container"] = "none"
 
-        if functions.SetDefaultEdgeCompetence(project_data["id"]) and functions.SetCompetenceType(project_data["id"], True): 
+        if functions.SetCompetenceType(project_data["id"], True): 
             project_data["const_comp"] = True
 
     if input["competence_type"] == "Настраиваемый":
         display["user_competence_container"] = "none"
         display["edge_competence_container"] = "block"
 
-        project_data["const_comp"] = False
         if functions.SetCompetenceType(project_data["id"], False):
             project_data["const_comp"] = False
 
@@ -725,34 +744,48 @@ def CompetenceTypeChoice(input, project_data_store):
     output["value"] = value
     output["message"] = "Настройка постоянной компетентности пользователей" if project_data["const_comp"] else "Настройка компетентности пользователя при оценке связи"
     output["project_data_store"] = json.dumps(project_data, cls = functions.NpEncoder)
+    output["user_competence_disabled"] = True if input["competence_type"] == "Настраиваемый" else False
     
     return output
-
 
 @dash.callback(
     Output("competence_select", "data"),
     Output("competence_select", "label"),
     Output("competence_select", "value", allow_duplicate = True),
-    Input("group_checkbox", "checked"),
-    State("project_data_store", 'data'),
+    Input("group_checkbox_edge", "checked"),
+    State("project_data_store", "data"),
     prevent_initial_call = True
 )
-def GroupCheckbox(checked, project_data_store):
-    
+def GroupCheckboxEdge(checked, project_data_store):
     if project_data_store == None: raise PreventUpdate
+
     project_data = json.loads(project_data_store)
     data = functions.GetSelectData("competence_select", project_data["id"], checked)
     label = "Группа пользователей" if checked else "Пользователь"
 
     return data, label, None
-        
 
+@dash.callback(
+    Output("project_competence_table", "children"),
+    Input("group_checkbox_project", "checked"),
+    State("project_data_store", "data"),
+    prevent_initial_call = True
+)
+def GroupCheckboxProject(checked, project_data_store):
+    if project_data_store == None: raise PreventUpdate
+
+    project_data = json.loads(project_data_store)
+    if checked: table_content = functions.CreateTableContent(["Группа", "Компетентность"], functions.GetGroupProjectCompetenceData(project_data["id"]))
+    else: table_content = functions.CreateTableContent(["Пользователь", "Компетентность"], functions.GetUserProjectCompetenceData(project_data["id"]))
+
+    return table_content
+        
 @dash.callback(
     Output("edge_competence_table", "children", allow_duplicate = True),
     Output("save_edge_competence", "disabled"),
     Input("competence_select", "value"),
     Input("source_node_select", "value"),
-    State("group_checkbox", "checked"),
+    State("group_checkbox_edge", "checked"),
     prevent_initial_call = True
 )
 def EdgeCompetenceChoice(table_id, source_node_id, checked):
@@ -765,14 +798,13 @@ def EdgeCompetenceChoice(table_id, source_node_id, checked):
 
     return functions.CreateTableContent(["Критерий", "Компетентность"], edge_competence_data), save_button_disabled
 
-
 @dash.callback(
     Output("edge_competence_table", "children", allow_duplicate = True),
     Input("save_edge_competence", "n_clicks"),
     State({"type": "edge_competence", "index": ALL}, "value"),
     State({"type": "edge_competence", "index": ALL}, "id"),
     State("competence_select", "value"),
-    State("group_checkbox", "checked"),
+    State("group_checkbox_edge", "checked"),
     prevent_initial_call = True
 )
 def SaveEdgeCompetence(clickdata, edge_competence_values, edge_competence_ids, table_id, checked):
@@ -785,4 +817,30 @@ def SaveEdgeCompetence(clickdata, edge_competence_values, edge_competence_ids, t
 
     raise PreventUpdate
 
+@dash.callback(
+    Output("project_competence_table", "children", allow_duplicate = True),
+    Input("save_project_competence", "n_clicks"),
+    State({"type": "project_competence", "index": ALL}, "value"),
+    State({"type": "project_competence", "index": ALL}, "id"),
+    State("group_checkbox_project", "checked"),
+    State("project_data_store", "data"),
+    prevent_initial_call = True
+)
+def SaveProjectCompetence(clickdata, project_competence_values, project_competence_ids, checked, project_data_store):
+    competence_data = pd.DataFrame(list(zip(project_competence_values, [id["index"] for id in project_competence_ids])), columns = ["competence", "id"])
+    competence_data.drop(competence_data[competence_data["competence"] == ""].index, inplace = True)
+    competence_data = list(competence_data.itertuples(index = False, name = None))
 
+    project_data = json.loads(project_data_store)
+    if checked: functions.SetGroupProjectCompetence(competence_data, project_data["id"])
+    else: functions.SetUserProjectCompetence(competence_data)
+    functions.SetDefaultEdgeCompetence(project_data["id"])
+
+    raise PreventUpdate
+
+
+
+
+#-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#Управление группами ---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------

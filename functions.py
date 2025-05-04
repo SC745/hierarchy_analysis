@@ -7,15 +7,18 @@ import numpy as np
 import json
 from flask_login import UserMixin
 
+#Соединение с БД
 #connection = psycopg2.connect(host='localhost', database='hierarchy', user='postgres', password='228228', port = 5432)
 connection = psycopg2.connect(host='192.168.1.102', database='hierarchy', user='postgres', password='228228', port = 5432)
 cursor = connection.cursor()
 
+#Класс пользователя для аутентификации
 class User(UserMixin):
     def __init__(self, username):
         self.id = username
         self.userdata = GetUserData(username)
 
+#Кодировка для json
 class NpEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, np.integer):
@@ -25,6 +28,7 @@ class NpEncoder(json.JSONEncoder):
         if isinstance(obj, np.ndarray):
             return obj.tolist()
         return super(NpEncoder, self).default(obj)
+
 
 font_props = {
     "font-family": "times.ttf",
@@ -42,15 +46,34 @@ nodebox_props = {
 }
 
 
-#Получение данных для построения иерархии ----------------------------------------------------------------------------------------------------
+cons_coef_data = {
+    1: 0,
+    2: 0,
+    3: 0.58,
+    4: 0.90,
+    5: 1.12,
+    6: 1.24,
+    7: 1.32,
+    8: 1.41,
+    9: 1.45,
+    10: 1.49
+}
+
+
+
+
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#Получение данных для построения иерархии ----------------------------------------------------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 
 #Получить датафрейм вершин из базы
 def GetNodes(project_id):
-    query = f"""select uuid, node_name, id from tbl_nodes
+    query = f"""select uuid, node_name from tbl_nodes
         where project_id = {project_id}
         order by node_name, id"""
     cursor.execute(query)
-    nodes = pd.DataFrame(cursor.fetchall(), columns = ["id", "name", "table_id"])
+    nodes = pd.DataFrame(cursor.fetchall(), columns = ["id", "name"])
 
     return nodes
 
@@ -60,18 +83,17 @@ def GetEdges(project_id):
         tbl_edges.uuid, 
         source.uuid as source_id, 
         target.uuid as target_id,
-        false as deleted,
-        tbl_edges.id
+        false as deleted
         from
         tbl_edges
         inner join tbl_nodes as source on source.id = tbl_edges.source_id
         inner join tbl_nodes as target on target.id = tbl_edges.target_id
         where 
         tbl_edges.project_id = {project_id}
-        order by source.node_name, target.node_name, tbl_edges.id"""
+        order by source.node_name, source.id, target.node_name, target.id"""
         
     cursor.execute(query)
-    edges = pd.DataFrame(cursor.fetchall(), columns = ["id", "source", "target", "deleted", "table_id"])
+    edges = pd.DataFrame(cursor.fetchall(), columns = ["id", "source", "target", "deleted"])
 
     return edges
 
@@ -81,8 +103,7 @@ def GetEdgedata(project_id, user_id):
         tbl_edges.uuid, 
         source.uuid as source_id, 
         target.uuid as target_id,
-        tbl_edgedata.deleted,
-        tbl_edges.id
+        tbl_edgedata.deleted
         from
         tbl_edgedata 
         inner join tbl_edges on tbl_edges.id = tbl_edgedata.edge_id
@@ -91,10 +112,10 @@ def GetEdgedata(project_id, user_id):
         where
         tbl_edges.project_id = {project_id} and
         tbl_edgedata.user_id = {user_id}
-        order by source.node_name, target_node_name, tbl_edges.id"""
+        order by source.node_name, source.id, target.node_name, target.id"""
         
     cursor.execute(query)
-    edgedata = pd.DataFrame(cursor.fetchall(), columns = ["id", "source", "target", "deleted", "table_id"])
+    edgedata = pd.DataFrame(cursor.fetchall(), columns = ["id", "source", "target", "deleted"])
     return edgedata
 
 #Получить ребра с коэффициентом объединения
@@ -104,7 +125,7 @@ def GetMergedEdges(project_id):
         source.uuid as source_id, 
         target.uuid as target_id,
         rated_edges.deleted,
-        tbl_edges.id
+        rated_edges.merge_coef
         from
         (
             select
@@ -127,10 +148,10 @@ def GetMergedEdges(project_id):
         inner join tbl_edges on tbl_edges.uuid = rated_edges.uuid
         inner join tbl_nodes as source on source.id = tbl_edges.source_id
         inner join tbl_nodes as target on target.id = tbl_edges.target_id
-        order by source.node_name, target.node_name, tbl_edges.id"""
+        order by source.node_name, source.id, target.node_name, target.id"""
     
     cursor.execute(query)
-    merged_edges = pd.DataFrame(cursor.fetchall(), columns = ["id", "source", "target", "deleted", "table_id"])
+    merged_edges = pd.DataFrame(cursor.fetchall(), columns = ["id", "source", "target", "deleted", "merge_coef"])
     return merged_edges
 
 #Получить датафрейм ребер из базы в зависимости от этапа проекта
@@ -146,15 +167,21 @@ def GetProjectEdges(project_data, user_id):
     return edges
 
 #Получить датафреймы вершин и ребер из базы
-def GetProjectDfs(project_data, user_id):
+def GetProjectDfs(project_data, user_id = None):
     nodes_df = GetNodes(project_data["id"])
     edges_df = GetProjectEdges(project_data, user_id)
 
     nodes_df, edges_df = ExcludeDeletedElements(nodes_df, edges_df, "delete")
     nodes_df = GetNodeLevels(nodes_df, edges_df)
 
-    print(nodes_df)
-    print(edges_df)
+    return nodes_df, edges_df
+
+def GetAnalyticsGraphDfs(project_id):
+    nodes_df = GetNodes(project_id)
+    edges_df = GetMergedEdges(project_id)
+
+    nodes_df, edges_df = ExcludeDeletedElements(nodes_df, edges_df, "highlight")
+    nodes_df = GetNodeLevels(nodes_df, edges_df)
 
     return nodes_df, edges_df
 
@@ -168,7 +195,7 @@ def ExcludeDeletedElements(nodes_df, edges_df, type):
             edges_df["classes"] = "default"
 
             edges_df.loc[edges_df["deleted"] == True, "classes"] = "deleted"
-            nodes_df.loc[~nodes_df["id"].isin(edges_df["target"]) & (nodes_df["id"] != head_id), "classes"] = "deleted"
+            nodes_df.loc[~nodes_df["id"].isin(edges_df[edges_df["deleted"] == False]["target"]) & (nodes_df["id"] != head_id), "classes"] = "deleted"
 
         if type == "delete":
             edges_df.drop(edges_df.loc[edges_df["deleted"] == True].index, inplace = True)
@@ -193,11 +220,15 @@ def GetNodeLevels(nodes_df, edges_df):
             for child_id in children: nodes_df.loc[nodes_df["id"] == child_id, "level"] = nodes_df.loc[nodes_df["id"] == source_id, "level"].values[0] + 1
             visited.append(source_id)
         
-    return nodes_df.sort_values(by="level")
+    return nodes_df.sort_values(by = ["level", "name"])
 
 
 
-#Построение иерархии ----------------------------------------------------------------------------------------------------
+
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#Построение иерархии -------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 
 #Получить элементы для отрисовки при инициализации
 def GetHierarchyPreset(nodes_df, edges_df):
@@ -214,7 +245,11 @@ def GetHierarchyPreset(nodes_df, edges_df):
                 node_data["width"] = 0
                 node_data["height"] = 0
                 node_data["level"] = level
-                node_data["table_id"] = row["table_id"]
+
+                if "priority" in row: 
+                    node_data["priority"] = row["priority"]
+                    node_data["cons_coef"] = row["cons_coef"]
+                    node_data["full_name"] = row["name"] + f"\n (Вес: {row['priority']}, ОС: {row['cons_coef']})"
 
                 node_position = {}
                 node_position["x"] = 0
@@ -236,11 +271,16 @@ def GetHierarchyPreset(nodes_df, edges_df):
             edge_data["id"] = row["id"]
             edge_data["source"] = row["source"]
             edge_data["target"] = row["target"]
-            edge_data["table_id"] = row["table_id"]
+
+            if "local_priority" in row: edge_data["local_priority"] = row["local_priority"]
+            if "merge_coef" in row: edge_data["merge_coef"] = row["merge_coef"]
 
             edge_object = {}
             edge_object["data"] = edge_data
             edge_object["classes"] = "default"
+
+            if "classes" in row: edge_object["classes"] = row["classes"]
+            else: edge_object["classes"] = "default"
 
             edge_list.append(edge_object)
         
@@ -258,8 +298,8 @@ def RefreshNodePositionsSizes(elements):
         if "source" not in element["data"]:
             element["data"]["width"] = nodebox_df.iloc[element["data"]["level"] - 1]["node_width"]
             element["data"]["height"] = nodebox_df.iloc[element["data"]["level"] - 1]["node_height"]
-            element["position"]["x"] = (nodebox_df["level_width"].max() - nodebox_df.iloc[element["data"]["level"] - 1]["level_width"] + element["data"]["width"] + 2 * nodebox_props["margin-x"]) / 2 + (element["data"]["width"] + 2 * nodebox_props["margin-x"]) * element_counter[element["data"]["level"]]
-            element["position"]["y"] = nodebox_df[:element["data"]["level"] - 1]["node_height"].sum() + element["data"]["height"] / 2 + nodebox_props["margin-y"] * 2 * (element["data"]["level"] - 1)
+            element["position"]["x"] = (nodebox_df["level_width"].max() - nodebox_df.iloc[element["data"]["level"] - 1]["level_width"] + element["data"]["width"] + 2 * nodebox_props["margin-x"]) / 2 + (element["data"]["width"] + 2 * nodebox_props["margin-x"]) * element_counter[element["data"]["level"]] + 600
+            element["position"]["y"] = nodebox_df[:element["data"]["level"] - 1]["node_height"].sum() + element["data"]["height"] / 2 + nodebox_props["margin-y"] * 2 * (element["data"]["level"] - 1) + 30
             element_counter[element["data"]["level"]] += 1
 
     return elements
@@ -286,18 +326,26 @@ def ColorElements(element_data):
         element["classes"] = "default"
 
 #Покрасить элементы
-def ColorAnalyticsElements(element_data, cons_coef):
+def ColorAnalyticsElements(element_data, cons_coef = None):
     for element in element_data["elements"]:
         if element_data["selected"] and element_data["selected"]["data"]["id"] == element["data"]["id"]: 
             element["classes"] = "selected"
             continue
 
-        if element["data"]["cons_coef"] > cons_coef: 
-            element["classes"] = "bad"
+        if cons_coef:
+            if cons_coef in element["data"]:
+                if element["data"]["cons_coef"] > cons_coef: 
+                    element["classes"] = "bad"
+                    continue
+                else:
+                    element["classes"] = "good"
+                    continue
+
+        if element["data"]["deleted"]: 
+            element["classes"] = "deleted"
             continue
-        else:
-            element["classes"] = "good"
-            continue
+
+        element["classes"] = "default"
 
 #Получить ширину текста в пикселях
 def GetTextWidth(font, line):
@@ -317,6 +365,7 @@ def GetNodebox(text):
     
     line = ""
     height_counter = 0
+    if "\n" in text: height_counter += font_props["font-height"]
 
     words = text.split(" ")
 
@@ -351,7 +400,8 @@ def GetLevelInfo(nodes_df, level):
     
     nodelevel_df = nodes_df.loc[nodes_df["level"] == level]
     for index, row in nodelevel_df.iterrows():
-        width, height = GetNodebox(row["name"])
+        if "full_name" in row: width, height = GetNodebox(row["full_name"])
+        else: width, height = GetNodebox(row["name"])
         if nodebox["node_width"] < width: nodebox["node_width"] = width
         if nodebox["node_height"] < height: nodebox["node_height"] = height
 
@@ -374,7 +424,11 @@ def GetHierarchyInfo(nodes_df):
 
 
 
-#Редактирование иерархии ----------------------------------------------------------------------------------------------------
+
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#Редактирование иерархии ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 
 #Удалить ребро
 def DeleteEdge(nodes_df, edges_df, edge_id, element_data):
@@ -706,29 +760,13 @@ def ChangeCompleteState(project_id, user_id, option, state):
 
     return True
 
-#Получить данные сравнительной оценки для пользователя
-def GetUserCompdata(source_node_id, user_id):
-    query = f"""select n0.node_name source_node_name, n1.node_name t1_node_name, n2.node_name t2_node_name, superior, superiority_code, tbl_compdata.id
-        from tbl_compdata
-        inner join tbl_superiority on tbl_superiority.id = tbl_compdata.superiority_id
-        inner join tbl_edgedata ed1 on ed1.id = tbl_compdata.edgedata1_id
-        inner join tbl_edgedata ed2 on ed2.id = tbl_compdata.edgedata2_id
-        inner join tbl_edges e1 on e1.id = ed1.edge_id
-        inner join tbl_edges e2 on e2.id = ed2.edge_id
-        inner join tbl_nodes n0 on n0.id = e1.source_id
-        inner join tbl_nodes n1 on n1.id = e1.target_id
-        inner join tbl_nodes n2 on n2.id = e2.target_id
-        where ed1.user_id = {user_id} and n0.uuid = '{source_node_id}'
-        order by t1_node_name, t2_node_name, tbl_compdata.id"""
-    
-    cursor.execute(query)
-    compdata = pd.DataFrame(cursor.fetchall(), columns = ["source_node_name", "t1_node_name", "t2_node_name", "superior", "code", "table_id"]).to_dict("records")
-
-    return compdata
 
 
 
-#Вход и страница проектов ----------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#Вход и страница проектов --------------------------------------------------------------------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 
 #Проверить пароль при входе
 def CheckUserCredentials(login, password):
@@ -868,7 +906,11 @@ def InsertNewProject(user_login):
 
 
 
-#Страница настроек ----------------------------------------------------------------------------------------------------
+
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#Страница настроек ---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 
 #Получить пользователей, учавствующих в проекте
 def GetProjectUserdata(project_id):
@@ -935,19 +977,23 @@ def UpdateProjectName(new_name, project_id):
     return True
 
 #Изменить статус проекта в базе
-def UpdateProjectStatus(new_status, project_data):
+def UpdateProjectStatus(new_status, project_data, user_id):
     res = False
     if project_data["status"]["stage"] < new_status["stage"]:
         project_data["status"] = new_status
-        if new_status["code"] == "dep_eval": res = InsertEdgedata(project_data["id"])
-        elif new_status["code"] == "comp_eval": res = InsertCompdata(project_data)
-        elif new_status["code"] == "completed": "Вычисления весов по завершившим оценку экспертам, сбор аналитики (индекс согласованности, коэффициент значимости противоречивости)"
+        if new_status["code"] == "dep_eval":
+            res = InsertEdgedata(project_data["id"])
+        elif new_status["code"] == "comp_eval": 
+            res = ChangeCompleteState(project_data["id"], user_id, "de_completed", True)
+            res = InsertCompdata(project_data)
+        elif new_status["code"] == "completed": 
+            res = ChangeCompleteState(project_data["id"], user_id, "ce_completed", True)
+            "Вычисления весов по завершившим оценку экспертам, сбор аналитики (индекс согласованности, коэффициент значимости противоречивости)"
     else:
         project_data["status"] = new_status
         if new_status["code"] == "initial": res = DeleteEdgedata(project_data["id"])
         elif new_status["code"] == "dep_eval": res = DeleteCompdata(project_data["id"])
-        elif new_status["code"] == "comp_eval": "Очистка аналитики, переход к этапу сравнительной оценки"
-        if res: res = RemoveCompletedState(project_data)
+        res = RemoveCompletedState(project_data)
 
     if res:
         query = f"update tbl_projects set status_id = {new_status['id']} where id = {project_data['id']}"
@@ -1016,7 +1062,11 @@ def CreateAndInsertCompdata(nodes_df, edges_df, edgedata):
 
 
 
-#Обработка редактирования списка пользователей и изменения ролей ----------------------------------------------------------------------------------------------------
+
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#Обработка редактирования списка пользователей и изменения ролей -----------------------------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 
 #Добавить пользователя в проект
 def InsertUserdata(user_login, role_code, project_id):
@@ -1141,7 +1191,7 @@ def DeleteUserCompdata(user_login, project_id):
 
     return True
 
-#Вставить данные оценки зависимостей для выбранного эксперта по умолчанию
+#Вставить данные сравнительной оценки для выбранного эксперта по умолчанию
 def InsertUserCompdata(user_login, project_data):
     if DeleteUserCompdata(user_login, project_data["id"]):
         nodes_df, edges_df = GetProjectDfs(project_data, None)
@@ -1163,25 +1213,90 @@ def InsertUserCompdata(user_login, project_data):
     
     return False
 
+#Получить данные сравнительной оценки выбранного эксперта для вывода в таблицу оценивания
+def GetUserCompdataForSimpleGrid(source_node_id, user_id):
+    query = f"""select n0.node_name source_node_name, n1.node_name t1_node_name, n2.node_name t2_node_name, superior, superiority_code, tbl_compdata.id
+        from tbl_compdata
+        inner join tbl_superiority on tbl_superiority.id = tbl_compdata.superiority_id
+        inner join tbl_edgedata ed1 on ed1.id = tbl_compdata.edgedata1_id
+        inner join tbl_edgedata ed2 on ed2.id = tbl_compdata.edgedata2_id
+        inner join tbl_edges e1 on e1.id = ed1.edge_id
+        inner join tbl_edges e2 on e2.id = ed2.edge_id
+        inner join tbl_nodes n0 on n0.id = e1.source_id
+        inner join tbl_nodes n1 on n1.id = e1.target_id
+        inner join tbl_nodes n2 on n2.id = e2.target_id
+        where ed1.user_id = {user_id} and n0.uuid = '{source_node_id}'
+        order by t1_node_name, n1.id, t2_node_name, n2.id, tbl_compdata.id"""
+    
+    cursor.execute(query)
+    compdata = pd.DataFrame(cursor.fetchall(), columns = ["source_node_name", "t1_node_name", "t2_node_name", "superior", "code", "table_id"]).to_dict("records")
+
+    return compdata
+
+#Получить данные сравнительной оценки (его компетентность и данные)
+def GetCalculatedCompdata(source_node_id, user_id = None):
+
+    user_string = ""
+    if user_id: user_string = f"and ed1.user_id = {user_id}"
+
+    query = f"""select
+        t1.node_name as t1_node_name,
+        t2.node_name as t2_node_name,
+        competence_data,
+        weighted_data
+        from
+        (select 
+        n1.id as t1_id, 
+        n2.id as t2_id, 
+        sqrt(exp(sum(ln(ed1.competence)) / count(ed1.competence)) * exp(sum(ln(ed2.competence)) / count(ed2.competence))) as competence_data,
+        exp(sum(ln(case when superior = true then superiority_code ^ sqrt(ed1.competence * ed2.competence)	when superior = false then 1 / (superiority_code ^ sqrt(ed1.competence * ed2.competence)) end)) /count(n1.id)) as weighted_data
+        from tbl_compdata
+        inner join tbl_superiority on tbl_superiority.id = tbl_compdata.superiority_id
+        inner join tbl_edgedata ed1 on ed1.id = tbl_compdata.edgedata1_id
+        inner join tbl_edgedata ed2 on ed2.id = tbl_compdata.edgedata2_id
+        inner join tbl_edges e1 on e1.id = ed1.edge_id
+        inner join tbl_edges e2 on e2.id = ed2.edge_id
+        inner join tbl_nodes n0 on n0.id = e1.source_id
+        inner join tbl_nodes n1 on n1.id = e1.target_id
+        inner join tbl_nodes n2 on n2.id = e2.target_id
+        inner join tbl_userdata on ed1.user_id = tbl_userdata.user_id
+        inner join tbl_roles on tbl_roles.id = tbl_userdata.role_id
+        where n0.uuid = '{source_node_id}' and access_level > 1 and ce_completed = true {user_string}
+        group by t1_id, t2_id) as grouped_data
+        inner join tbl_nodes as t1 on grouped_data.t1_id = t1.id
+        inner join tbl_nodes as t2 on grouped_data.t2_id = t2.id
+        order by t1_node_name, t1.id, t2_node_name, t2.id"""
+    
+    cursor.execute(query)
+    compdata = pd.DataFrame(cursor.fetchall(), columns = ["t1_name", "t2_name", "competence_data", "weighted_data"]).to_dict("records")
+    print(compdata)
+
+    return compdata
 
 
-#Обработка изменения компетентности ----------------------------------------------------------------------------------------------------
+
+
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#Обработка изменения компетентности ----------------------------------------------------------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#Получение компетентности в различных разрезах
 
 #Получить компетентность по исходящим ребрам для пользователя
 def GetUserEdgeCompetenceData(source_id, user_id):
     query = f"""select
-        target_name,
+        target_table.node_name as target_name,
         competence,
         tbl_edgedata.id
         from
         tbl_edgedata
         inner join tbl_edges on tbl_edges.id = tbl_edgedata.edge_id
-        inner join (select id, node_name as source_name from tbl_nodes) as source_table on source_table.id = tbl_edges.source_id
-        inner join (select id, node_name as target_name from tbl_nodes) as target_table on target_table.id = tbl_edges.target_id
+        inner join tbl_nodes as source_table on source_table.id = tbl_edges.source_id
+        inner join tbl_nodes as target_table on target_table.id = tbl_edges.target_id
         where 
         tbl_edges.source_id = {source_id} and
         tbl_edgedata.user_id = {user_id}
-        order by target_name"""
+        order by target_name, target_table.id"""
     
     cursor.execute(query)
     competence_data = pd.DataFrame(cursor.fetchall(), columns = ["name", "competence", "table_id"])
@@ -1202,7 +1317,7 @@ def GetGroupEdgeCompetenceData(source_id, group_id):
         inner join tbl_groupdata on tbl_groupdata.user_id = tbl_edgedata.user_id
         where source_id = {source_id} and tbl_groupdata.group_id = {group_id}
         group by tbl_edges.id, tbl_nodes.node_name
-        order by tbl_nodes.node_name"""
+        order by tbl_nodes.node_name, tbl_nodes.id"""
     
     cursor.execute(query)
     competence_data = pd.DataFrame(cursor.fetchall(), columns = ["name", "competence", "table_id"])
@@ -1210,8 +1325,8 @@ def GetGroupEdgeCompetenceData(source_id, group_id):
 
     return competence_data
 
-#Получить компетентность пользователей по умолчанию
-def GetUserCompetenceData(project_id):
+#Получить компетентность пользователей по проекту
+def GetUserProjectCompetenceData(project_id):
     query = f"""select user_name, competence, tbl_userdata.id
         from tbl_users
         inner join tbl_userdata on tbl_userdata.user_id = tbl_users.id
@@ -1221,35 +1336,35 @@ def GetUserCompetenceData(project_id):
     
     cursor.execute(query)
     competence_data = pd.DataFrame(cursor.fetchall(), columns = ["name", "competence", "table_id"])
-    competence_data = CreateCompetenceData(competence_data, "user_competence")
+    competence_data = CreateCompetenceData(competence_data, "project_competence")
 
     return competence_data
 
-#Установить компетентность пользователей при оценке связей по умолчанию
-def SetDefaultEdgeCompetence(project_id):
-    query = f"""update tbl_edgedata 
-        set competence = tbl_userdata.competence
-        from tbl_userdata
-        where tbl_edgedata.user_id = tbl_userdata.user_id and
-        tbl_userdata.project_id = {project_id}"""
+#Получить компетентность групп пользователей по проекту
+def GetGroupProjectCompetenceData(project_id):
+    query = f"""select 
+        tbl_groups.group_name, 
+        case when count(distinct tbl_userdata.competence) = 1 then max(tbl_userdata.competence) else -1 end competence,
+        tbl_groups.id
+        from 
+        tbl_groups
+        inner join tbl_groupdata on tbl_groupdata.group_id = tbl_groups.id
+        inner join tbl_userdata on tbl_userdata.user_id = tbl_groupdata.user_id
+        inner join tbl_roles on tbl_userdata.role_id = tbl_roles.id
+        where 
+        tbl_groups.project_id = tbl_userdata.project_id and
+        tbl_userdata.project_id = {project_id} and
+        access_level > 1
+        group by tbl_groups.id, tbl_groups.group_name"""
     
-    try: 
-        cursor.execute(query)
-        connection.commit()
-    except: return False
+    cursor.execute(query)
+    competence_data = pd.DataFrame(cursor.fetchall(), columns = ["name", "competence", "table_id"])
+    competence_data = CreateCompetenceData(competence_data, "project_competence")
 
-    return True
+    return competence_data
 
-#Установить компетентность пользователей при оценке связей по умолчанию
-def SetCompetenceType(project_id, const_comp):
-    query = f"update tbl_projects set const_comp = {const_comp} where id = {project_id}"
-    
-    try: 
-        cursor.execute(query)
-        connection.commit()
-    except: return False
 
-    return True
+#Установка компетентности в различных разрезах
 
 #Установить компетентность выбранному пользователю при оценке выбранных связей
 def SetUserEdgeCompetence(competence_data, user_id):
@@ -1289,9 +1404,80 @@ def SetGroupEdgeCompetence(competence_data, group_id):
 
     return True
 
+#Установить компетентность пользователей по проекту
+def SetUserProjectCompetence(competence_data):
+    competence_data = ','.join(cursor.mogrify("(%s,%s)", i).decode('utf-8') for i in competence_data)
+
+    if len(competence_data):
+        query = f"""update tbl_userdata set competence = data.competence
+            from (values {competence_data}) as data(competence, id)
+            where  data.id = tbl_userdata.id"""
+        
+        try: 
+            cursor.execute(query)
+            connection.commit()
+        except: return False
+    else: return False
+
+    return True
+
+#Установить компетентность групп пользователей по проекту
+def SetGroupProjectCompetence(competence_data, project_id):
+    competence_data = ','.join(cursor.mogrify("(%s,%s)", i).decode('utf-8') for i in competence_data)
+
+    if len(competence_data):
+        query = f"""update tbl_userdata set competence = data.competence
+            from (values {competence_data}) as data(competence, id), tbl_groupdata, tbl_groups
+            where 
+            data.id = tbl_groupdata.group_id and
+            tbl_userdata.user_id = tbl_groupdata.user_id and
+            tbl_userdata.project_id = tbl_groups.project_id
+            and tbl_userdata.project_id = {project_id}"""
+        
+        try: 
+            cursor.execute(query)
+            connection.commit()
+        except: return False
+    else: return False
+
+    return True
 
 
-#Обработка переходов между этапами ----------------------------------------------------------------------------------------------------
+#Служебные функции
+
+#Установить компетентность пользователей при оценке связей по умолчанию
+def SetDefaultEdgeCompetence(project_id):
+    query = f"""update tbl_edgedata 
+        set competence = tbl_userdata.competence
+        from tbl_userdata
+        where tbl_edgedata.user_id = tbl_userdata.user_id and
+        tbl_userdata.project_id = {project_id}"""
+    
+    try: 
+        cursor.execute(query)
+        connection.commit()
+    except: return False
+
+    return True
+
+#Установить тип компетентности пользователей в проекте
+def SetCompetenceType(project_id, const_comp):
+    query = f"update tbl_projects set const_comp = {const_comp} where id = {project_id}"
+    
+    try: 
+        cursor.execute(query)
+        connection.commit()
+    except: return False
+
+    return True
+
+
+
+
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#Обработка переходов между этапами -----------------------------------------------------------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 
 #Удалить данные оценки зависимостей по проекту
 def DeleteEdgedata(project_id):
@@ -1383,42 +1569,54 @@ def RemoveCompletedState(project_data):
 
     return True
 
+#Получить группы по проекту
+def GetProjectGroups(project_id):
+    query = "get "
 
 
-#Страница аналитики ----------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#Страница аналитики --------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+
+#Получить дерево проекта
 def GetAnalyticsTreeData(project_id, use_groups):
+    status = "ce" if use_groups else "de"
+
     query = f"""select 
-        tbl_users.id, 
-        tbl_users.user_name, 
-        (select coalesce(tbl_groups.id, 0)) AS group_id,
-        (select coalesce(tbl_groups.group_name, 'Нет группы')) AS group_name
+        tbl_userdata.user_id,
+        tbl_users.user_name,
+        coalesce(gr.group_id, 0) AS group_id,
+        coalesce(tbl_groups.group_name, 'Нет группы') AS group_name
         from tbl_userdata
-        inner join tbl_users on tbl_users.id = tbl_userdata.user_id
-        left outer join tbl_groupdata on tbl_groupdata.user_id = tbl_users.id
-        left outer join tbl_groups on tbl_groupdata.group_id = tbl_groups.id
-        where tbl_userdata.project_id = {project_id} and 
-        tbl_userdata.de_completed = true and 
-        (tbl_groups.project_id is null or tbl_groups.project_id = {project_id})
+        left outer join
+        (select tbl_groupdata.user_id, tbl_groupdata.group_id from
+        tbl_groupdata 
+        inner join tbl_groups on tbl_groupdata.group_id = tbl_groups.id
+        where tbl_groups.project_id = {project_id}) gr on gr.user_id = tbl_userdata.user_id
+        left outer join tbl_users on tbl_users.id = tbl_userdata.user_id
+        left outer join tbl_groups on tbl_groups.id  = gr.group_id
+        where tbl_userdata.project_id = {project_id} and tbl_userdata.{status}_completed = true 
         order by group_name, user_name"""
     
     cursor.execute(query)
     treedata = pd.DataFrame(cursor.fetchall(), columns = ["user_id", "user_name", "group_id", "group_name"])
 
+    project_children = []
     if use_groups:
         group_df = treedata.drop(["user_id", "user_name"], axis = 1).drop_duplicates()
-        project_children = []
+
         for index, group_row in group_df.iterrows():
             if group_row["group_id"] == 0: continue
 
             group_item = {}
-            group_item["label"] = GetShortUsername(group_row["name"])
-            group_item["value"] = "project/group/" + str(group_row["id"])
+            group_item["label"] = group_row["group_name"]
+            group_item["value"] = "project/group/" + str(group_row["group_id"])
             group_item["children"] = []
-            for index, user_row in treedata.loc[treedata["group_id"] == group_row['id']]:
+            for index, user_row in treedata.loc[treedata["group_id"] == group_row["group_id"]].iterrows():
                 user_item = {}
                 user_item["label"] = GetShortUsername(user_row["user_name"])
-                user_item["value"] = group_item["value"] + "/user/" + {user_row["user_id"]}
+                user_item["value"] = group_item["value"] + "/user/" + str(user_row["user_id"])
                 group_item["children"].append(user_item)
             project_children.append(group_item)
 
@@ -1431,7 +1629,7 @@ def GetAnalyticsTreeData(project_id, use_groups):
             for index, user_row in without_group_df.iterrows():
                 user_item = {}
                 user_item["label"] = GetShortUsername(user_row["user_name"])
-                user_item["value"] = ungrouped["value"] + "/user/" + {user_row["user_id"]}
+                user_item["value"] = ungrouped["value"] + "/user/" + str(user_row["user_id"])
                 ungrouped["children"].append(user_item)
             project_children.append(ungrouped)
 
@@ -1439,19 +1637,163 @@ def GetAnalyticsTreeData(project_id, use_groups):
         treedata.drop(["group_id", "group_name"], axis = 1, inplace = True)
         treedata.sort_values(by = "user_name", inplace = True)
 
-        project_children = []
         for index, user_row in treedata.iterrows():
             user_item = {}
             user_item["label"] = GetShortUsername(user_row["user_name"])
             user_item["value"] = "project/user/" + str(user_row["user_id"])
             project_children.append(user_item)
 
-    return project_children
+    root = {
+        "label": "Проект",
+        "value": "project",
+        "children" : project_children
+    }
+
+    return [root]
+
+#Получить матрицу значений из Compdata
+def MakeMatrix(compdata, property = "weighted_data", asymmetrical = True, round = False):
+    matrix = []
+
+    matrix_dim = (1 + int(pow(1 + 8 * len(compdata), 0.5))) // 2
+
+    for i in range(matrix_dim):
+        matrix_row = []
+        for j in range(matrix_dim): matrix_row.append([0])
+        matrix.append(matrix_row)
+
+    for i in range(matrix_dim): matrix[i][i] = 1.0
+
+    i = 0
+    j = 1
+    for item in compdata:
+        if round:
+            matrix[i][j] = round(item[property] / 1, 3)
+            if asymmetrical: matrix[j][i] = round(1 / item[property], 3)
+            else: matrix[j][i] = matrix[i][j]
+        else:
+            matrix[i][j] = item[property] / 1
+            if asymmetrical: matrix[j][i] = 1 / item[property]
+            else: matrix[j][i] = matrix[i][j]
+
+        j += 1
+        if j == matrix_dim:
+            i += 1
+            j = i + 1
+        
+    return matrix
+
+#Сформировать таблицу по матрице значений
+def MakeTableData(source_name, target_names, matrix, local_priorities = None):
+    matrix_dim = len(target_names)
+    matrix.insert(0, [0] * matrix_dim)
+
+    for i, name in enumerate(target_names): matrix[0][i] = name
+    for i in range(matrix_dim + 1):
+        matrix[i].insert(0, [0])
+        if i == 0: 
+            matrix[0][0] = source_name
+            if local_priorities: matrix[i].append("Локальные приоритеты")
+            continue
+        matrix[i][0] = target_names[i - 1]
+        if local_priorities: matrix[i].append(local_priorities[i - 1])
+
+
+    return matrix
+
+#Получить локальные приоритеты
+def GetNodeLocalPriorities(matrix):
+    local_priorities = []
+
+    for i in range(len(matrix)):
+        geo_mean = 1.0
+        for j in range(len(matrix)):
+            geo_mean *= matrix[i][j]
+        geo_mean = pow(geo_mean, 1 / len(matrix))
+        local_priorities.append(geo_mean)
+
+    sum_geo_mean = sum(local_priorities)
+    for i in range(len(local_priorities)):
+        local_priorities[i] = local_priorities[i] / sum_geo_mean
+
+    return local_priorities
+
+#Получить отношение согласованности
+def GetConsCoef(matrix, local_priorities):
+    matrix_dim = len(local_priorities)
+
+    if matrix_dim in [1, 2]: return 0
+
+    multiplied_cols = []
+    for i in range(matrix_dim):
+        col_sum = 0
+        for j in range(matrix_dim): col_sum += matrix[j][i]
+        multiplied_cols.append(col_sum * local_priorities[i])
+
+    cons_index = abs(sum(multiplied_cols) - matrix_dim) / (matrix_dim - 1)
+
+    global cons_coef_data
+    return round(cons_index / cons_coef_data[matrix_dim], 3)
+
+#Получить глобальные приоритеты
+def GetPriorityInfo(project_data, user_id = None):
+    nodes_df, edges_df = GetProjectDfs(project_data)
+
+    nodes_df["priority"] = 0
+    nodes_df["cons_coef"] = 0
+
+    edges_df["priority"] = 0
+    edges_df["local_priority"] = 0
+
+    for level in range(1, nodes_df["level"].max()):
+        level_df = nodes_df[nodes_df["level"] == level]
+        for lvl_index, lvl_row in level_df.iterrows():
+            compdata = GetCalculatedCompdata(lvl_row["id"], user_id)
+            matrix = MakeMatrix(compdata)
+            local_priorities = GetNodeLocalPriorities(matrix)
+            nodes_df.loc[lvl_index, "cons_coef"] = GetConsCoef(matrix, local_priorities)
+
+            priority_index = 0
+            outcoming_edges = edges_df.loc[edges_df["source"] == lvl_row["id"]]
+            for out_index, out_row in outcoming_edges.iterrows():
+                edges_df.loc[out_index, "priority"] = local_priorities[priority_index]
+                edges_df.loc[out_index, "local_priority"] = round(local_priorities[priority_index], 3)
+                priority_index += 1
+
+    nodes_df.loc[nodes_df["level"] == 1, "priority"] = 1
+    for level in range(2, nodes_df["level"].max() + 1):
+        level_df = nodes_df[nodes_df["level"] == level]
+        for lvl_index, lvl_row in level_df.iterrows():
+            incoming_edges = edges_df.loc[edges_df["target"] == lvl_row["id"]]
+            outcoming_edges = edges_df.loc[edges_df["source"] == lvl_row["id"]]
+
+            node_priority = 0
+            for index, row in incoming_edges.iterrows(): node_priority += row["priority"]
+            nodes_df.loc[lvl_index, "priority"] = node_priority
+
+            for out_index, out_row in outcoming_edges.iterrows():
+                outcoming_edge_priority = 0
+
+                for inc_index, inc_row in incoming_edges.iterrows():
+                    node_priority += inc_row["priority"]
+                    outcoming_edge_priority += inc_row["priority"] * out_row["priority"]
+                edges_df.loc[out_index, "priority"] = outcoming_edge_priority
+
+    for level in range(2, nodes_df["level"].max() + 1):
+        level_df = nodes_df[nodes_df["level"] == level]
+        float_fix = 0
+        for lvl_index, lvl_row in level_df.iterrows(): float_fix += lvl_row["priority"]
+        for lvl_index, lvl_row in level_df.iterrows(): nodes_df.loc[lvl_index, "priority"] = round(lvl_row["priority"] * float_fix, 3)
+
+    return nodes_df, edges_df
 
 
 
 
-#Служебные функции ----------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#Служебные функции ---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 
 #Создает датафреймы вершин и ребер на основе словаря элементов
 def ElementsToDfs(elements):
@@ -1465,8 +1807,10 @@ def ElementsToDfs(elements):
             df_row["source"] = element["data"]["source"]
             df_row["target"] = element["data"]["target"]
             df_row["deleted"] = False
-            df_row["table_id"] = element["data"]["table_id"]
             df_row["classes"] = element["classes"]
+
+            if "priority" in element["data"]: df_row["priority"] = element["data"]["priority"]
+            if "local_priority" in element["data"]: df_row["local_priority"] = element["data"]["local_priority"]
 
             edge_list.append(df_row)
         else: 
@@ -1476,8 +1820,11 @@ def ElementsToDfs(elements):
             df_row["width"] = element["data"]["width"]
             df_row["height"] = element["data"]["height"]
             df_row["level"] = element["data"]["level"]
-            df_row["table_id"] = element["data"]["table_id"]
             df_row["classes"] = element["classes"]
+
+            if "priority" in element["data"]: df_row["priority"] = element["data"]["priority"]
+            if "cons_coef" in element["data"]: df_row["cons_coef"] = element["data"]["cons_coef"]
+            if "full_name" in element["data"]: df_row["full_name"] = element["data"]["full_name"]
 
             node_list.append(df_row)
 
@@ -1618,7 +1965,14 @@ def GetSelectData(select_id, project_id = 0, group_checked = False):
         query = f"""select distinct tbl_nodes.id, node_name
             from tbl_nodes inner join tbl_edges on tbl_edges.source_id = tbl_nodes.id
             where tbl_nodes.project_id = {project_id}
-            order by node_name"""
+            order by node_name, tbl_nodes.id"""
+        cursor.execute(query)
+        data = pd.DataFrame(cursor.fetchall(), columns = ["value", "label"])
+        data['value'] = data['value'].astype(str)
+        data = data.to_dict("records")
+
+    if select_id == "group_select":
+        query = f"select id, group_name from tbl_groups where project_id = {project_id}"
         cursor.execute(query)
         data = pd.DataFrame(cursor.fetchall(), columns = ["value", "label"])
         data['value'] = data['value'].astype(str)
@@ -1671,72 +2025,9 @@ def MakeSimpleGrid(superiority_data):
 
     return dmc.SimpleGrid(cols = matrix_dim + 1, spacing = '0', verticalSpacing = '0', children = simple_grid_children)
 
-def MakeMatrix(superiority_data):
-    matrix = []
-
-    matrix_dim = (1 + int(pow(1 + 8 * len(superiority_data), 0.5))) // 2
-
-    for i in range(matrix_dim):
-        matrix_row = []
-        for j in range(matrix_dim): matrix_row.append([0])
-        matrix.append(matrix_row)
-
-    for i in range(matrix_dim): matrix[i][i] = 1.0
-
-    i = 0
-    j = 1
-    for item in superiority_data:
-        matrix[i][j] = round(item["code"] / 1, 3)
-        matrix[j][i] = round(1 / item["code"], 3)
-
-        j += 1
-        if j == matrix_dim:
-            i += 1
-            j = i + 1
-        
-    return matrix
-
-def GetLocalPriorities(matrix):
-    local_priorities = []
-
-    for i in range(len(matrix)):
-        geo_mean = 1.0
-        for j in range(len(matrix)):
-            geo_mean *= matrix[i][j]
-        geo_mean = pow(geo_mean, 1 / len(matrix))
-        local_priorities.append(geo_mean)
-
-    sum_geo_mean = sum(local_priorities)
-    for i in range(len(local_priorities)):
-        local_priorities[i] = round(local_priorities[i] / sum_geo_mean, 3)
-
-    return local_priorities
-
-
-
-
-def GetGlobalProrities(nodes_df, edges_df):
-    for level in range(1, nodes_df["level"].max() + 1):
-        level_df = nodes_df[nodes_df["level"] == level]
-        for lvl_index, lvl_row in level_df.iterrows():
-            incoming_edges = edges_df[edges_df["target"] == lvl_row["id"]]
-            outcoming_edges = edges_df[edges_df["source"] == lvl_row["id"]]
-
-            node_priority = 0
-            if level == 1: node_priority = 1
-
-            for index, row in incoming_edges.iterrows(): node_priority += row["global_priority"]
-            nodes_df[lvl_index, "priority"] = node_priority
-
-            for out_index, out_row in outcoming_edges.iterrows():
-                outcoming_edge_priority = 0
-                if level == 1: outcoming_edge_priority = out_row["local_priority"]
-
-                for inc_index, inc_row in incoming_edges.iterrows():
-                    node_priority += inc_row["global_priority"]
-                    outcoming_edge_priority += inc_row["global_priority"] * out_row["local_priority"]
-                edges_df[out_index, "global_priority"] = outcoming_edge_priority
-
-        return nodes_df, edges_df
-
-    
+#Получить данные сравнительной оценки для пользователя
+def GetUserNodesForSimpleGrid(source_node_id, project_data, elements = None):
+    if elements: nodes_df, edges_df = GetProjectDfs(project_data, None)
+    else: nodes_df, edges_df = ElementsToDfs(project_data, None)
+    target_ids = list(edges_df.loc[edges_df["source"] == source_node_id]["target"])
+    return list(nodes_df.loc[nodes_df["id"].isin(target_ids)]["name"])
