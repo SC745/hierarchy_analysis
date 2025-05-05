@@ -565,7 +565,7 @@ def DeleteProject(clickdata, project_data_store):
 #-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 @dash.callback(
-    Output("role_select", "value"),
+    Output("role_select", "value", allow_duplicate = True),
     Output("role_select", "data"),
     Output("role_select", "disabled"),
     Output("add_user", "disabled"),
@@ -576,11 +576,15 @@ def DeleteProject(clickdata, project_data_store):
     State("project_data_store", "data"),
     prevent_initial_call = True
 )
-def SelectUser(user_login, role_code, role_select_data, project_data_store):
+def SelectUser(user_id, role_code, role_select_data, project_data_store):
+    user_id = int(user_id)
+
     if project_data_store == None: raise PreventUpdate
     project_data = json.loads(project_data_store)
 
-    user_role = functions.GetUserRole(user_login, project_data["id"])
+    userdata_id = functions.GetUserdataId(user_id, project_data["id"])
+    user_role = functions.GetUserRole(userdata_id) if userdata_id else None
+
     if user_role:
         if ctx.triggered_id != "role_select": role_code = user_role["role_code"]
         role_select_disabled = bool(user_role["access_level"] >= project_data["role"]["access_level"])
@@ -599,35 +603,40 @@ def SelectUser(user_login, role_code, role_select_data, project_data_store):
 
     return role_code, role_select_data, role_select_disabled, add_user_disabled, change_role_disabled
 
+
 @dash.callback(
     Output("user_table", "children", allow_duplicate = True),
+    Output("competence_select", "data", allow_duplicate = True),
     Input("change_role", "n_clicks"),
     State("user_select", "value"),
     State("role_select", "value"),
     State("project_data_store", "data"),
     prevent_initial_call = True
 )
-def ChangeRole(clickdata, user_login, role_code, project_data_store):
-    
+def ChangeRole(clickdata, user_id, role_code, project_data_store):
+    user_id = int(user_id)
+
     if project_data_store == None: raise PreventUpdate
     project_data = json.loads(project_data_store)
-    prev_role_code = functions.GetUserRole(user_login, project_data["id"])["role_code"]
+    userdata_id = functions.GetUserdataId(user_id, project_data["id"])
 
-    res = functions.UpdateUserRole(user_login, role_code, project_data["id"])
-    if project_data["status"]["stage"] > 1 and "spectator" in [prev_role_code, role_code] and res:
-        res = functions.InsertUserEdgedata(user_login, project_data["id"])
-        if project_data["status"]["stage"] > 2 and res:
-            res = functions.InsertUserCompdata(user_login, project_data)
+    prev_role_code = functions.GetUserRole(userdata_id)["role_code"]
+    if not functions.UpdateUserRole(userdata_id, role_code): raise PreventUpdate
+    if project_data["status"]["stage"] > 1 and "spectator" in [prev_role_code, role_code]:
+        if not functions.InsertUserEdgedata(userdata_id): raise PreventUpdate
+        if project_data["status"]["stage"] > 2:
+            if not functions.InsertUserCompdata(userdata_id, project_data): raise PreventUpdate
+    
 
-    if res: 
-        table_content = functions.CreateTableContent(["Имя", "Роль", "Удалить"], functions.GetUserTableData(project_data["id"], project_data["role"]["access_level"]))
-        return table_content
+    table_content = functions.CreateTableContent(["Имя", "Роль", "Удалить"], functions.GetUserTableData(project_data["id"], project_data["role"]["access_level"]))
+    select_data = functions.GetSelectData("competence_select", project_data["id"])
+    return table_content, select_data
 
-    raise PreventUpdate
 
 @dash.callback(
     Output("user_table", "children", allow_duplicate = True),
     Output("task_table", "children", allow_duplicate = True),
+    Output("competence_select", "data", allow_duplicate = True),
     Output("role_select", "value", allow_duplicate = True),
     Input("add_user", "n_clicks"),
     State("user_select", "value"),
@@ -635,49 +644,53 @@ def ChangeRole(clickdata, user_login, role_code, project_data_store):
     State("project_data_store", "data"),
     prevent_initial_call = True
 )
-def AddUser(clickdata, user_login, role_code, project_data_store):
+def AddUser(clickdata, user_id, role_code, project_data_store):
+    user_id = int(user_id)
+
     if project_data_store == None: raise PreventUpdate
     project_data = json.loads(project_data_store)
-    res = functions.InsertUserdata(user_login, role_code, project_data["id"])
-    if project_data["status"]["stage"] > 1 and res:
-        res = functions.InsertUserEdgedata(user_login, project_data["id"])
-        if project_data["status"]["stage"] > 2 and res:
-            res = functions.InsertUserCompdata(user_login, project_data)
-                
-    if res: 
-        user_table_content = functions.CreateTableContent(["Имя", "Роль", "Удалить"], functions.GetUserTableData(project_data["id"], project_data["role"]["access_level"]))
-        task_table_content = functions.CreateTableContent(["Имя", "Оценка зависимостей", "Сравнительная оценка"], functions.GetTaskTableData(project_data["id"]))
-        return user_table_content, task_table_content, role_code
+    userdata_id = functions.InsertUserdata(user_id, role_code, project_data["id"])
 
-    raise PreventUpdate
+    if project_data["status"]["stage"] > 1:
+        if not functions.InsertUserEdgedata(userdata_id): raise PreventUpdate
+        if project_data["status"]["stage"] > 2:
+            if not functions.InsertUserCompdata(userdata_id, project_data): raise PreventUpdate
+                
+    user_table_content = functions.CreateTableContent(["Имя", "Роль", "Удалить"], functions.GetUserTableData(project_data["id"], project_data["role"]["access_level"]))
+    task_table_content = functions.CreateTableContent(["Имя", "Оценка зависимостей", "Сравнительная оценка"], functions.GetTaskTableData(project_data["id"]))
+    select_data = functions.GetSelectData("competence_select", project_data["id"])
+
+    return user_table_content, task_table_content, select_data, role_code
+
 
 @dash.callback(
     Output("user_table", "children", allow_duplicate = True),
     Output("task_table", "children", allow_duplicate = True),
+    Output("competence_select", "data", allow_duplicate = True),
     Output("role_select", "value", allow_duplicate = True),
     Input({"type": "delete_button", "index": ALL}, "n_clicks"),
-    State("user_select", "value"),
-    State("role_select", "value"),
     State("project_data_store", "data"),
+    State("role_select", "value"),
     prevent_initial_call = True
 )
-def DeleteUser(clickdata, user_login, role_code, project_data_store):
+def DeleteUser(clickdata, project_data_store, role_code):
     if ctx.triggered[0]["value"]:
         if project_data_store == None: raise PreventUpdate
         project_data = json.loads(project_data_store)
-        user_login = ctx.triggered_id["index"]
+        userdata_id = int(ctx.triggered_id["index"])
 
-        res = functions.DeleteUserdata(user_login, project_data["id"])
-        if project_data["status"]["stage"] > 1 and res:
-            res = functions.DeleteUserEdgedata(user_login, project_data["id"])
-            if project_data["status"]["stage"] > 2 and res:
-                res = functions.DeleteUserCompdata(user_login, project_data["id"])
+        if project_data["status"]["stage"] > 1:
+            if not functions.DeleteUserEdgedata(userdata_id): raise PreventUpdate
+            if project_data["status"]["stage"] > 2:
+                if not functions.DeleteUserCompdata(userdata_id): raise PreventUpdate
+        if not functions.DeleteUserdata(userdata_id): raise PreventUpdate
 
-        if res: 
-            user_table_content = functions.CreateTableContent(["Имя", "Роль", "Удалить"], functions.GetUserTableData(project_data["id"], project_data["role"]["access_level"]))
-            task_table_content = functions.CreateTableContent(["Имя", "Оценка зависимостей", "Сравнительная оценка"], functions.GetTaskTableData(project_data["id"]))
-            return user_table_content, task_table_content, role_code
+        user_table_content = functions.CreateTableContent(["Имя", "Роль", "Удалить"], functions.GetUserTableData(project_data["id"], project_data["role"]["access_level"]))
+        task_table_content = functions.CreateTableContent(["Имя", "Оценка зависимостей", "Сравнительная оценка"], functions.GetTaskTableData(project_data["id"]))
+        select_data = functions.GetSelectData("competence_select", project_data["id"])
 
+        return user_table_content, task_table_content, select_data, role_code
+    
     raise PreventUpdate
 
 

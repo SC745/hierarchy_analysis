@@ -176,9 +176,11 @@ def GetProjectDfs(project_data, user_id = None):
 
     return nodes_df, edges_df
 
-def GetAnalyticsGraphDfs(project_id):
+def GetAnalyticsGraphDfs(project_id, user_id = None):
     nodes_df = GetNodes(project_id)
-    edges_df = GetMergedEdges(project_id)
+
+    if user_id: edges_df = GetEdgedata(project_id, user_id)
+    else: edges_df = GetMergedEdges(project_id)
 
     nodes_df, edges_df = ExcludeDeletedElements(nodes_df, edges_df, "highlight")
     nodes_df = GetNodeLevels(nodes_df, edges_df)
@@ -878,7 +880,7 @@ def GetStatusByCode(status_code):
     return status
 
 #Заполнить БД данными о новом созданном проекте
-def InsertNewProject(user_login):
+def InsertNewProject(user_id):
     try:
         query = """insert into tbl_projects (
             project_name, 
@@ -899,7 +901,7 @@ def InsertNewProject(user_login):
             returning id"""
         cursor.execute(query)
         project_id = cursor.fetchone()[0]
-        res = InsertUserdata(user_login, "owner", project_id)
+        res = InsertUserdata(user_id, "owner", project_id)
     except: return False
 
     return res
@@ -911,6 +913,13 @@ def InsertNewProject(user_login):
 #Страница настроек ---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+
+def GetUserdataId(user_id, project_id):
+    query = f"select id from tbl_userdata where user_id = {user_id} and project_id = {project_id}"
+    cursor.execute(query)
+    try:
+        return cursor.fetchone()[0]
+    except: return None
 
 #Получить пользователей, учавствующих в проекте
 def GetProjectUserdata(project_id):
@@ -951,7 +960,7 @@ def GetTaskTableData(project_id):
 def GetUserTableData(project_id, access_level):
     table_data = GetProjectUserdata(project_id)
 
-    table_data["delete"] = [dmc.Button(id = {"type": "delete_button", "index": row["login"]}, children = "Удалить", color = "red", disabled = bool(row["access_level"] >= access_level)) for index, row in table_data.iterrows()]
+    table_data["delete"] = [dmc.Button(id = {"type": "delete_button", "index": row["id"]}, children = "Удалить", color = "red", disabled = bool(row["access_level"] >= access_level)) for index, row in table_data.iterrows()]
 
     table_data.drop(["de_completed", "ce_completed", "access_level", "login", "id"], axis = 1, inplace = True)
     table_data = table_data.to_dict("records")
@@ -1017,12 +1026,11 @@ def DeleteProject(project_id):
 
     return True
 
-#Получить роль пользователя в проекте по его логину
-def GetUserRole(user_login, project_id):
+#Получить роль пользователя в проекте
+def GetUserRole(userdata_id):
     query = f"""select role_code, access_level from tbl_userdata
-        inner join tbl_users on tbl_users.id = tbl_userdata.user_id
         inner join tbl_roles on tbl_roles.id = tbl_userdata.role_id
-        where login = '{user_login}' and project_id = {project_id}"""
+        where tbl_userdata.id = {userdata_id}"""
     cursor.execute(query)
 
     role_data = pd.DataFrame(cursor.fetchall(), columns = ["role_code", "access_level"])
@@ -1069,7 +1077,7 @@ def CreateAndInsertCompdata(nodes_df, edges_df, edgedata):
 
 
 #Добавить пользователя в проект
-def InsertUserdata(user_login, role_code, project_id):
+def InsertUserdata(user_id, role_code, project_id):
     query = f"""insert into tbl_userdata (
         user_id, 
         role_id, 
@@ -1077,7 +1085,7 @@ def InsertUserdata(user_login, role_code, project_id):
         de_completed, 
         ce_completed, 
         competence)
-        select 
+        (select 
         tbl_users.id as user_id, 
         tbl_roles.id as role_id,
         {project_id} as project_id,
@@ -1085,24 +1093,23 @@ def InsertUserdata(user_login, role_code, project_id):
         false as ce_completed,
         1 as competence
         from tbl_users, tbl_roles
-        where login = '{user_login}' and role_code = '{role_code}'"""
+        where tbl_users.id = {user_id} and role_code = '{role_code}')
+        returning id"""
     
-    try: 
+    try:
         cursor.execute(query)
         connection.commit()
     except: return False
-
-    return True
+    
+    return cursor.fetchone()[0]
 
 #Изменить роль пользователя
-def UpdateUserRole(user_login, role_code, project_id):
+def UpdateUserRole(userdata_id, role_code):
     query = f"""update tbl_userdata set role_id = tbl_roles.id
-        from tbl_roles, tbl_users
+        from tbl_roles
         where 
-        tbl_userdata.user_id = tbl_users.id and
         role_code = '{role_code}' and 
-        login = '{user_login}' and
-        project_id = {project_id}"""
+        tbl_userdata.id = {userdata_id}"""
     
     try: 
         cursor.execute(query)
@@ -1112,13 +1119,8 @@ def UpdateUserRole(user_login, role_code, project_id):
     return True
 
 #Удалить пользователя из проекта
-def DeleteUserdata(user_login, project_id):
-    query = f"""delete from tbl_userdata 
-        using tbl_users
-        where
-        tbl_users.id = tbl_userdata.user_id and
-        tbl_userdata.project_id = {project_id} and
-        tbl_users.login = '{user_login}'"""
+def DeleteUserdata(userdata_id):
+    query = f"delete from tbl_userdata where tbl_userdata.id = {userdata_id}"
 
     try: 
         cursor.execute(query)
@@ -1128,14 +1130,14 @@ def DeleteUserdata(user_login, project_id):
     return True
 
 #Удалить данные оценки зависимостей для выбранного эксперта по проекту
-def DeleteUserEdgedata(user_login, project_id):
+def DeleteUserEdgedata(userdata_id):
     query = f"""delete from tbl_edgedata 
-        using tbl_edges, tbl_users 
+        using tbl_edges, tbl_userdata
         where 
         tbl_edges.id = tbl_edgedata.edge_id and
-        tbl_users.id = tbl_edgedata.user_id and
-        tbl_edges.project_id = {project_id} and
-        tbl_users.login = '{user_login}'"""
+        tbl_edges.project_id = tbl_userdata.project_id and
+        tbl_userdata.user_id = tbl_edgedata.user_id and
+        tbl_userdata.id = {userdata_id}"""
 
     try: 
         cursor.execute(query)
@@ -1145,24 +1147,21 @@ def DeleteUserEdgedata(user_login, project_id):
     return True
 
 #Вставить данные оценки зависимостей для выбранного эксперта по умолчанию
-def InsertUserEdgedata(user_login, project_id):
-    if DeleteUserEdgedata(user_login, project_id):
+def InsertUserEdgedata(userdata_id):
+    if DeleteUserEdgedata(userdata_id):
         query = f"""insert into tbl_edgedata (competence, deleted, edge_id, user_id)
             select
-            t1.competence as competence,
+            tbl_userdata.competence as competence,
             false as deleted,
             tbl_edges.id as edge_id, 
-            t1.user_id
+            tbl_userdata.user_id
             from
-            tbl_edges inner join
-                (tbl_userdata 
-                inner join tbl_roles on tbl_roles.id = tbl_userdata.role_id
-                inner join tbl_users on tbl_users.id = tbl_userdata.user_id) as t1
-            on t1.project_id = tbl_edges.project_id
+            tbl_edges
+            inner join tbl_userdata on tbl_userdata.project_id = tbl_edges.project_id
+            inner join tbl_users on tbl_userdata.user_id = tbl_users.id
+            inner join tbl_roles on tbl_userdata.role_id = tbl_roles.id
             where
-            tbl_edges.project_id = {project_id} and
-            t1.login = '{user_login}' and
-            t1.access_level > 1"""
+            tbl_userdata.id = {userdata_id} and tbl_roles.access_level > 1"""
         
         try: 
             cursor.execute(query)
@@ -1173,16 +1172,16 @@ def InsertUserEdgedata(user_login, project_id):
     return True
 
 #Удалить данные сравнительной оценки для выбранного эксперта по проекту
-def DeleteUserCompdata(user_login, project_id):
+def DeleteUserCompdata(userdata_id):
     query = f"""delete from tbl_compdata 
-        using tbl_edgedata, tbl_edges, tbl_users
+        using tbl_edgedata, tbl_userdata, tbl_edges
         where 
         (tbl_edgedata.id = tbl_compdata.edgedata1_id or
         tbl_edgedata.id = tbl_compdata.edgedata2_id) and
-        tbl_edgedata.edge_id = tbl_edges.id and
-        tbl_edgedata.user_id = tbl_users.id and
-        tbl_edges.project_id = {project_id} and
-        tbl_users.login = '{user_login}'"""
+        tbl_edges.id = tbl_edgedata.edge_id and
+        tbl_edges.project_id = tbl_userdata.project_id and
+        tbl_edgedata.user_id = tbl_userdata.user_id and
+        tbl_userdata.id = {userdata_id}"""
 
     try: 
         cursor.execute(query)
@@ -1192,18 +1191,17 @@ def DeleteUserCompdata(user_login, project_id):
     return True
 
 #Вставить данные сравнительной оценки для выбранного эксперта по умолчанию
-def InsertUserCompdata(user_login, project_data):
-    if DeleteUserCompdata(user_login, project_data["id"]):
+def InsertUserCompdata(userdata_id, project_data):
+    if DeleteUserCompdata(userdata_id):
         nodes_df, edges_df = GetProjectDfs(project_data, None)
 
-        query = f"""select tbl_edgedata.id, uuid, user_id from tbl_edgedata
+        query = f"""select tbl_edgedata.id, uuid, tbl_userdata.user_id
+            from tbl_edgedata
             inner join tbl_edges on tbl_edges.id = tbl_edgedata.edge_id
-            inner join tbl_users on tbl_users.id = tbl_edgedata.user_id
+            inner join tbl_userdata on tbl_userdata.project_id = tbl_edges.project_id and tbl_userdata.user_id = tbl_edgedata.user_id
             where 
             uuid = any (%s) and
-            login = '{user_login}' and
-            project_id = {project_data['id']}
-            order by user_id, uuid"""
+            tbl_userdata.id = {userdata_id}"""
         
         edge_list = list(edges_df["id"])
         cursor.execute(query, (edge_list,))
@@ -1233,11 +1231,11 @@ def GetUserCompdataForSimpleGrid(source_node_id, user_id):
 
     return compdata
 
-#Получить данные сравнительной оценки (его компетентность и данные)
+#Получить данные сравнительной оценки (его компетентность и данные) по вершине в разрезе проекта или конкретного пользователя
 def GetCalculatedCompdata(source_node_id, user_id = None):
 
-    user_string = ""
-    if user_id: user_string = f"and ed1.user_id = {user_id}"
+    filter_string = ""
+    if user_id: filter_string = f"and ed1.user_id = {user_id}"
 
     query = f"""select
         t1.node_name as t1_node_name,
@@ -1259,9 +1257,9 @@ def GetCalculatedCompdata(source_node_id, user_id = None):
         inner join tbl_nodes n0 on n0.id = e1.source_id
         inner join tbl_nodes n1 on n1.id = e1.target_id
         inner join tbl_nodes n2 on n2.id = e2.target_id
-        inner join tbl_userdata on ed1.user_id = tbl_userdata.user_id
+        inner join tbl_userdata on ed1.user_id = tbl_userdata.user_id and tbl_userdata.project_id = n0.project_id
         inner join tbl_roles on tbl_roles.id = tbl_userdata.role_id
-        where n0.uuid = '{source_node_id}' and access_level > 1 and ce_completed = true {user_string}
+        where n0.uuid = '{source_node_id}' and access_level > 1 and ce_completed = true {filter_string}
         group by t1_id, t2_id) as grouped_data
         inner join tbl_nodes as t1 on grouped_data.t1_id = t1.id
         inner join tbl_nodes as t2 on grouped_data.t2_id = t2.id
@@ -1269,7 +1267,67 @@ def GetCalculatedCompdata(source_node_id, user_id = None):
     
     cursor.execute(query)
     compdata = pd.DataFrame(cursor.fetchall(), columns = ["t1_name", "t2_name", "competence_data", "weighted_data"]).to_dict("records")
-    print(compdata)
+
+    return compdata
+
+#Получить данные сравнительной оценки (его компетентность и данные) по вершине в разрезе группы пользователей
+def GetGroupCalculatedCompdata(source_node_id, group_id):
+    if group_id: filter_string = f"= {group_id}"
+    else: filter_string = "is NULL"
+
+    query = f"""select
+        t1.node_name as t1_node_name,
+        t2.node_name as t2_node_name,
+        competence_data,
+        weighted_data
+        from
+        (select 
+        t1_id as t1_id, 
+        t2_id as t2_id, 
+        sqrt(exp(sum(ln(ed1_competence)) / count(ed1_competence)) * exp(sum(ln(ed2_competence)) / count(ed2_competence))) as competence_data,
+        exp(sum(ln(case when superior = true then superiority_code ^ sqrt(ed1_competence * ed2_competence)	when superior = false then 1 / (superiority_code ^ sqrt(ed1_competence * ed2_competence)) end)) /count(t1_id)) as weighted_data
+        from 
+        (select 
+        n1.id as t1_id, 
+        n2.id as t2_id, 
+        ed1.competence as ed1_competence,
+        ed2.competence as ed2_competence,
+        superiority_code,
+        superior,
+        n1.id,
+        tbl_userdata.user_id,
+        tbl_userdata.project_id,
+        e1.project_id,
+        e2.project_id
+        from tbl_compdata
+        inner join tbl_superiority on tbl_superiority.id = tbl_compdata.superiority_id
+        inner join tbl_edgedata ed1 on ed1.id = tbl_compdata.edgedata1_id
+        inner join tbl_edgedata ed2 on ed2.id = tbl_compdata.edgedata2_id
+        inner join tbl_edges e1 on e1.id = ed1.edge_id
+        inner join tbl_edges e2 on e2.id = ed2.edge_id
+        inner join tbl_nodes n0 on n0.id = e1.source_id
+        inner join tbl_nodes n1 on n1.id = e1.target_id
+        inner join tbl_nodes n2 on n2.id = e2.target_id
+        inner join tbl_userdata on ed1.user_id = tbl_userdata.user_id and tbl_userdata.project_id = n0.project_id
+        inner join tbl_roles on tbl_roles.id = tbl_userdata.role_id
+        where n0.uuid = '{source_node_id}' and access_level > 1 and ce_completed = true
+        ) compdata
+        inner join (
+        select ud.user_id
+        from tbl_userdata ud
+        inner join tbl_nodes n0 on n0.project_id = ud.project_id 
+        inner join tbl_roles on tbl_roles.id = ud.role_id
+        left outer join tbl_groupdata gd on gd.user_id = ud.user_id
+        where n0.uuid = '{source_node_id}' and access_level > 1 and ce_completed = true and gd.group_id {filter_string}
+        group by ud.user_id
+        ) fg on fg.user_id = compdata.user_id
+        group by t1_id, t2_id) as grouped_data
+        inner join tbl_nodes as t1 on grouped_data.t1_id = t1.id
+        inner join tbl_nodes as t2 on grouped_data.t2_id = t2.id
+        order by t1_node_name, t1.id, t2_node_name, t2.id"""
+    
+    cursor.execute(query)
+    compdata = pd.DataFrame(cursor.fetchall(), columns = ["t1_name", "t2_name", "competence_data", "weighted_data"]).to_dict("records")
 
     return compdata
 
@@ -1702,7 +1760,7 @@ def MakeTableData(source_name, target_names, matrix, local_priorities = None):
     return matrix
 
 #Получить локальные приоритеты
-def GetNodeLocalPriorities(matrix):
+def GetLocalPriorities(matrix):
     local_priorities = []
 
     for i in range(len(matrix)):
@@ -1736,7 +1794,7 @@ def GetConsCoef(matrix, local_priorities):
     return round(cons_index / cons_coef_data[matrix_dim], 3)
 
 #Получить глобальные приоритеты
-def GetPriorityInfo(project_data, user_id = None):
+def GetPriorityInfo(project_data, prop_id = None, group = False):
     nodes_df, edges_df = GetProjectDfs(project_data)
 
     nodes_df["priority"] = 0
@@ -1748,16 +1806,18 @@ def GetPriorityInfo(project_data, user_id = None):
     for level in range(1, nodes_df["level"].max()):
         level_df = nodes_df[nodes_df["level"] == level]
         for lvl_index, lvl_row in level_df.iterrows():
-            compdata = GetCalculatedCompdata(lvl_row["id"], user_id)
+            if group: compdata = GetGroupCalculatedCompdata(lvl_row["id"], prop_id)
+            else: compdata = GetCalculatedCompdata(lvl_row["id"], prop_id)
+            
             matrix = MakeMatrix(compdata)
-            local_priorities = GetNodeLocalPriorities(matrix)
+            local_priorities = GetLocalPriorities(matrix)
             nodes_df.loc[lvl_index, "cons_coef"] = GetConsCoef(matrix, local_priorities)
 
             priority_index = 0
             outcoming_edges = edges_df.loc[edges_df["source"] == lvl_row["id"]]
             for out_index, out_row in outcoming_edges.iterrows():
                 edges_df.loc[out_index, "priority"] = local_priorities[priority_index]
-                edges_df.loc[out_index, "local_priority"] = round(local_priorities[priority_index], 3)
+                edges_df.loc[out_index, "local_priority"] = local_priorities[priority_index]
                 priority_index += 1
 
     nodes_df.loc[nodes_df["level"] == 1, "priority"] = 1
@@ -1772,12 +1832,7 @@ def GetPriorityInfo(project_data, user_id = None):
             nodes_df.loc[lvl_index, "priority"] = node_priority
 
             for out_index, out_row in outcoming_edges.iterrows():
-                outcoming_edge_priority = 0
-
-                for inc_index, inc_row in incoming_edges.iterrows():
-                    node_priority += inc_row["priority"]
-                    outcoming_edge_priority += inc_row["priority"] * out_row["priority"]
-                edges_df.loc[out_index, "priority"] = outcoming_edge_priority
+                edges_df.loc[out_index, "priority"] = out_row["local_priority"] * node_priority
 
     for level in range(2, nodes_df["level"].max() + 1):
         level_df = nodes_df[nodes_df["level"] == level]
@@ -1935,15 +1990,22 @@ def GetSelectData(select_id, project_id = 0, group_checked = False):
         cursor.execute(query)
         data = pd.DataFrame(cursor.fetchall(), columns = ["value", "label", "stage"]).to_dict("records")
 
+
     if select_id == "user_select":
-        query = "select login, user_name from tbl_users order by user_name"
+        query = "select id, user_name from tbl_users order by user_name"
         cursor.execute(query)
-        data = pd.DataFrame(cursor.fetchall(), columns = ["value", "label"]).to_dict("records")
+        data = pd.DataFrame(cursor.fetchall(), columns = ["value", "label"])
+        
+        data["value"] = data["value"].astype(str)
+        data = data.to_dict("records")
 
     if select_id == "role_select":
         query = "select role_code, role_name, access_level from tbl_roles order by access_level"
         cursor.execute(query)
-        data = pd.DataFrame(cursor.fetchall(), columns = ["value", "label", "access_level"]).to_dict("records")
+        data = pd.DataFrame(cursor.fetchall(), columns = ["value", "label", "access_level"])
+
+        data["value"] = data["value"].astype(str)
+        data = data.to_dict("records")
 
     if select_id == "competence_select":
         if group_checked:
@@ -1958,7 +2020,8 @@ def GetSelectData(select_id, project_id = 0, group_checked = False):
              
         cursor.execute(query)
         data = pd.DataFrame(cursor.fetchall(), columns = ["value", "label"])
-        data['value'] = data['value'].astype(str)
+
+        data["value"] = data["value"].astype(str)
         data = data.to_dict("records")
 
     if select_id == "source_node_select":
@@ -1968,14 +2031,16 @@ def GetSelectData(select_id, project_id = 0, group_checked = False):
             order by node_name, tbl_nodes.id"""
         cursor.execute(query)
         data = pd.DataFrame(cursor.fetchall(), columns = ["value", "label"])
-        data['value'] = data['value'].astype(str)
+
+        data["value"] = data["value"].astype(str)
         data = data.to_dict("records")
 
     if select_id == "group_select":
         query = f"select id, group_name from tbl_groups where project_id = {project_id}"
         cursor.execute(query)
         data = pd.DataFrame(cursor.fetchall(), columns = ["value", "label"])
-        data['value'] = data['value'].astype(str)
+
+        data["value"] = data["value"].astype(str)
         data = data.to_dict("records")
 
     return data
@@ -2031,3 +2096,6 @@ def GetUserNodesForSimpleGrid(source_node_id, project_data, elements = None):
     else: nodes_df, edges_df = ElementsToDfs(project_data, None)
     target_ids = list(edges_df.loc[edges_df["source"] == source_node_id]["target"])
     return list(nodes_df.loc[nodes_df["id"].isin(target_ids)]["name"])
+
+
+

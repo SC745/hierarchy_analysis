@@ -32,7 +32,7 @@ def GetEdgeCheckboxes(source_node, element_data, project_data):
         edge_checkbox.checked = row["id"] in accessable_nodes
         edge_checkbox.disabled = row["id"] in cascade_accessable_nodes or project_data["status"]["stage"] != 2 or project_data["role"]["access_level"] < 2
 
-        if "target" in element_data["state"]["selected"]["data"] and element_data["state"]["selected"]["data"]["target"] == row["id"]: edge_checkbox.style = {"background-color": "#e8f3fc"}
+        if element_data["state"]["selected"] and "target" in element_data["state"]["selected"]["data"] and element_data["state"]["selected"]["data"]["target"] == row["id"]: edge_checkbox.style = {"background-color": "#e8f3fc"}
 
         edge_checkboxes.append(edge_checkbox)
 
@@ -136,7 +136,7 @@ def layout():
                                         dmc.ActionIcon(id = {"type": "step_button", "index": "rollback"}, children = DashIconify(icon = "mingcute:corner-down-left-fill", width = 20), size = "input-sm", variant = "default", disabled = True),
                                         dmc.ActionIcon(id = {"type": "step_button", "index": "cancelrollback"}, children = DashIconify(icon = "mingcute:corner-down-right-fill", width = 20), size = "input-sm", variant = "default", disabled = True),
                                         dmc.ActionIcon(id = "locate", children = DashIconify(icon = "mingcute:location-line", width = 20), size = "input-sm", variant = "default"),
-                                        dmc.ActionIcon(id = "add_node", children = DashIconify(icon = "mingcute:cross-line", width = 20), size = "input-sm", variant = "light", disabled = True, color = "green"),
+                                        dmc.ActionIcon(id = "add_node", children = DashIconify(icon = "mingcute:cross-line", width = 20), size = "input-sm", variant = "light", disabled = project_data["status"]["stage"] != 1 or project_data["role"]["access_level"] < 3, color = "green"),
                                         dmc.ActionIcon(id = "save_graph", children = DashIconify(icon = "mingcute:save-2-line", width = 20), size = "input-sm", variant = "light", disabled = True),
                                     ],
                                     grow=True,
@@ -427,7 +427,7 @@ def SelectElement(input, project_data_store, element_data_store):
 
     if not current_node: raise PreventUpdate
 
-    if trigger["property"] == "tapNodeData" or trigger["id"] == "current_node_id":
+    if trigger["property"] == "tapNodeData":
         element_data["state"]["selected"] = current_node
     elif trigger["property"] == "tapEdgeData":
         element_data["state"]["selected"] = functions.GetElementById(input["tapEdgeData"]["id"], element_data["elements"])

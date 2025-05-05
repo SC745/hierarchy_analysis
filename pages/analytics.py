@@ -396,7 +396,7 @@ def layout():
 
 
 def GetTreeSelectedItem(selected):
-    if not "/" in selected: item_data = {"type": "project", "id": None}
+    if selected == "project": item_data = {"type": "project", "id": None}
     else:
         item_id = int(selected.split("/")[-1])
         if "user" in selected: item_data = {"type": "user", "id": item_id}
@@ -405,7 +405,12 @@ def GetTreeSelectedItem(selected):
     return item_data
 
 
-#Навигация ----------------------------------------------------------------------------------------------------
+
+
+#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#Навигация ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 
 @dash.callback(
     Output({"type": "redirect", "index": "analytics"}, "pathname", allow_duplicate = True),
@@ -494,12 +499,14 @@ def RedirectToProject(clickdata):
 )
 def TreeItemSelect(selected, project_data_store):
     if selected:
-        
-        selected = GetTreeSelectedItem(selected)
+        selected = GetTreeSelectedItem(selected[0])
         project_data = json.loads(project_data_store)
-        if selected["type"] in ["project", "user"]: 
-            elements = functions.GetHierarchyPreset(*functions.GetPriorityInfo(project_data, selected["id"]))
-        else: raise PreventUpdate
+
+        if ctx.triggered_id["index"] == "dep_eval":
+            elements = functions.GetHierarchyPreset(*functions.GetAnalyticsGraphDfs(project_data["id"], selected["id"]))
+        else:
+            group = bool(selected["type"] == "group")
+            elements = functions.GetHierarchyPreset(*functions.GetPriorityInfo(project_data, selected["id"], group))
 
         element_data = {}
         element_data["elements"] = elements
@@ -538,7 +545,7 @@ def SelectCompEvalGraphElement(input):
 
     tree_item = GetTreeSelectedItem(input["tree_selected_item"])
 
-    if tree_item["type"] != "group": compdata = functions.GetCalculatedCompdata(element_data["selected"]["data"]["id"])
+    if tree_item["type"] == "group": compdata = functions.GetGroupCalculatedCompdata(element_data["selected"]["data"]["id"])
     else: compdata = functions.GetCalculatedCompdata(element_data["selected"]["data"]["id"])
     
     if input["matrix_select_value"] == "comparison_matrix":

@@ -119,7 +119,7 @@ def ProjectChoice(clickdata):
     prevent_initial_call = True
 )
 def CreateProject(clickdata, table_data):
-    if functions.InsertNewProject(current_user.userdata["login"]):
+    if functions.InsertNewProject(current_user.userdata["id"]):
         project_data = functions.GetUserProjects(current_user.userdata["id"])
         body = dmc.TableTbody([dmc.TableTr([dmc.TableTd(element[key]) for key in element.keys()]) for element in project_data])
         table_data[1] = body
