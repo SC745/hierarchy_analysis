@@ -242,7 +242,7 @@ def layout():
                                 dmc.Text("Управление пользователями", fz = 24, fw = 500, pb = "sm"),
                                 dmc.Flex(
                                     children = [
-                                        dmc.Select(id = "user_select", data = functions.GetSelectData("user_select"), label = "Пользователь", searchable = True, size = "md", w = 350),
+                                        dmc.Select(id = "user_select", data = functions.GetSelectData("user_select"), label = "Пользователь", searchable = True, clearable = False, size = "md", w = 350),
                                         dmc.Select(id = "role_select", data = role_data, disabled = True, label = "Роль", size = "md", w = 350),
                                         dmc.Button("Добавить", id = "add_user", disabled = True, size = "md", w = 150),
                                         dmc.Button("Изменить роль", id = "change_role", disabled = True, size = "md", w = 180),
@@ -253,7 +253,7 @@ def layout():
                                 ),
                                 dmc.Table(
                                     id = "user_table",
-                                    children = functions.CreateTableContent(["Имя", "Роль", "Удалить"], functions.GetUserTableData(project_data["id"], project_data["role"]["access_level"])),
+                                    children = functions.CreateTableContent(["Имя", "Роль", "Удалить пользователя"], functions.GetUserTableData(project_data["id"], project_data["role"]["access_level"])),
                                     highlightOnHover = True,
                                     withTableBorder = True,
                                     fz = "md"
@@ -307,8 +307,8 @@ def layout():
                                                 dmc.Checkbox(id = "group_checkbox_edge", label = "Использовать группы", size = "md", fw = 500, pb = "xs"),
                                                 dmc.Flex(
                                                     children = [
-                                                        dmc.Select(id = "competence_select", data = functions.GetSelectData("competence_select", project_data["id"]), label = "Пользователь", searchable = True, size = "md", w = 350),
-                                                        dmc.Select(id = "source_node_select", data = functions.GetSelectData("source_node_select", project_data["id"]), label = "Группа критериев", searchable = True, size = "md", w = 350),
+                                                        dmc.Select(id = "competence_select", data = functions.GetSelectData("competence_select", project_data["id"]), label = "Пользователь", searchable = True, clearable = False, size = "md", w = 350),
+                                                        dmc.Select(id = "source_node_select", data = functions.GetSelectData("source_node_select", project_data["id"]), label = "Группа критериев", searchable = True, clearable = False, size = "md", w = 350),
                                                         dmc.Button("Сохранить", id = "save_edge_competence", disabled = True, size = "md", w = 150)
                                                     ],
                                                     gap = "md",
@@ -337,23 +337,68 @@ def layout():
                         ),
                         dmc.Box(
                             children = [
-                                dmc.Text("Управление пользователями", fz = 24, fw = 500, pb = "sm"),
+                                dmc.Text("Управление группами", fz = 24, fw = 500, pb = "sm"),
                                 dmc.Box(
                                     children = [
-                                        dmc.Text("Тип настройки", fz = "xl", fw = 500, pb = "sm"),
-                                        dmc.RadioGroup(
-                                            id = "groupmanage_radiogroup",
-                                            value = "Список групп",
-                                            children = [MakeRadioCard(key, groupmanage_radiogroupdata[key]["description"]) for key in groupmanage_radiogroupdata.keys()],
-                                            w = 550
+                                        dmc.Tabs(
+                                            children = [
+                                                dmc.TabsList(
+                                                    children = [
+                                                        dmc.TabsTab("Список групп", value = "group_list", pb = "sm", fz = "lg", fw = 500),
+                                                        dmc.TabsTab("Состав групп", value = "group_users", pb = "sm", fz = "lg", fw = 500),
+                                                    ],
+                                                ),
+                                                dmc.TabsPanel(
+                                                    children = [
+                                                        dmc.Flex(
+                                                            children = [
+                                                                dmc.Select(id = {"type": "grouplist_select", "index": "group_list"}, data = functions.GetSelectData("grouplist_select", project_data["id"]), clearable = True, label = "Группа", size = "md", w = 350),
+                                                                dmc.TextInput(id = "groupname_input", label = "Название группы", size = "md", debounce = 500, w = 350),
+                                                                dmc.Button(children = "Создать", id = "edit_group_button", disabled = True, size = "md", w = 180)
+                                                            ],
+                                                            gap = "md",
+                                                            align = "flex-end",
+                                                            pb = "sm"
+                                                        ),
+                                                        dmc.Table(
+                                                            id = "group_list_table",
+                                                            children = functions.CreateTableContent(["Группа", "Удалить группу"], functions.GetGroupListTableData(project_data["id"])),
+                                                            highlightOnHover = True,
+                                                            withTableBorder = True,
+                                                            fz = "md"
+                                                        )
+                                                    ], 
+                                                    value = "group_list",
+                                                    pt = "sm"
+                                                ),
+                                                dmc.TabsPanel(
+                                                    children = [
+                                                        dmc.Flex(
+                                                            children = [
+                                                                dmc.Select(id = {"type": "grouplist_select", "index": "group_users"}, data = functions.GetSelectData("grouplist_select", project_data["id"]), label = "Группа", size = "md", w = 350),
+                                                                dmc.Select(id = "groupuser_select", data = functions.GetSelectData("competence_select", project_data["id"]), label = "Пользователь", size = "md", w = 350),
+                                                                dmc.Button(children = "Добавить", id = "groupadd_user", disabled = True, size = "md", w = 150)
+                                                            ],
+                                                            gap = "md",
+                                                            align = "flex-end",
+                                                            pb = "sm"
+                                                        ),
+                                                        dmc.Table(
+                                                            id = "group_users_table",
+                                                            children = functions.CreateTableContent(["Пользователь", "Удалить из группы"], functions.GetGroupUsersTableData(project_data["id"])),
+                                                            highlightOnHover = True,
+                                                            withTableBorder = True,
+                                                            fz = "md"
+                                                        )
+                                                    ], 
+                                                    value = "group_users",
+                                                    pt = "sm"
+                                                ),
+                                            ],
+                                            orientation = "horizontal", 
+                                            variant = "default",
+                                            value = "group_list"
                                         ),
-                                        dmc.Table(
-                                            id = "group_table",
-                                            children = functions.CreateTableContent(["Группа", "Удалить"], functions.GetUserProjectCompetenceData(project_data["id"])),
-                                            highlightOnHover = True,
-                                            withTableBorder = True,
-                                            fz = "md"
-                                        )
                                     ]
                                 ),
                             ],
@@ -564,6 +609,7 @@ def DeleteProject(clickdata, project_data_store):
 #Управление пользователями ---------------------------------------------------------------------------------------------------------------------------------------------------------------
 #-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+
 @dash.callback(
     Output("role_select", "value", allow_duplicate = True),
     Output("role_select", "data"),
@@ -623,11 +669,11 @@ def ChangeRole(clickdata, user_id, role_code, project_data_store):
     prev_role_code = functions.GetUserRole(userdata_id)["role_code"]
     if not functions.UpdateUserRole(userdata_id, role_code): raise PreventUpdate
     if project_data["status"]["stage"] > 1 and "spectator" in [prev_role_code, role_code]:
+        if role_code == "spectator": functions.DeleteUserFromAllProjectGroups(int(user_id), project_data["id"])
         if not functions.InsertUserEdgedata(userdata_id): raise PreventUpdate
         if project_data["status"]["stage"] > 2:
             if not functions.InsertUserCompdata(userdata_id, project_data): raise PreventUpdate
     
-
     table_content = functions.CreateTableContent(["Имя", "Роль", "Удалить"], functions.GetUserTableData(project_data["id"], project_data["role"]["access_level"]))
     select_data = functions.GetSelectData("competence_select", project_data["id"])
     return table_content, select_data
@@ -762,7 +808,7 @@ def CompetenceTypeChoice(input):
     return output
 
 @dash.callback(
-    Output("competence_select", "data"),
+    Output("competence_select", "data", allow_duplicate = True),
     Output("competence_select", "label"),
     Output("competence_select", "value", allow_duplicate = True),
     Input("group_checkbox_edge", "checked"),
@@ -857,3 +903,129 @@ def SaveProjectCompetence(clickdata, project_competence_values, project_competen
 #-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 #Управление группами ---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 #-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+@dash.callback(
+    Output("groupname_input", "value"),
+    Input({"type": "grouplist_select", "index": "group_list"}, "value"),
+    State({"type": "grouplist_select", "index": "group_list"}, "data"),
+    prevent_initial_call = True
+)
+def SelectGroupOnGrouplistTab(groupselect_value, groupselect_data):
+    groupselect_data = pd.DataFrame(groupselect_data)
+    if groupselect_value: group_name = groupselect_data.loc[groupselect_data["value"] == groupselect_value, "label"][0]
+    else: group_name = None
+
+    return group_name
+
+@dash.callback(
+    Output("edit_group_button", "children", allow_duplicate = True),
+    Output("edit_group_button", "disabled"),
+    Input("groupname_input", "value"),
+    State({"type": "grouplist_select", "index": "group_list"}, "value"),
+    State("project_data_store", "data"),
+    prevent_initial_call = True
+)
+def SetButtonState(group_name, groupselect_value, project_data_store):
+    project_data = json.loads(project_data_store)
+
+    button_label = "Переименовать" if groupselect_value else "Создать"
+    button_disabled = not bool(group_name) or (functions.CheckExistingGroups(group_name, project_data["id"]) and not groupselect_value)
+
+    return button_label, button_disabled
+
+@dash.callback(
+    output = {
+        "group_list_table": Output("group_list_table", "children", allow_duplicate = True),
+        "project_competence_table": Output("project_competence_table", "children", allow_duplicate = True),
+        "competence_select": Output("competence_select", "data", allow_duplicate = True),
+        "group_select_list": Output({"type": "grouplist_select", "index": "group_list"}, "data", allow_duplicate = True),
+        "group_select_users": Output({"type": "grouplist_select", "index": "group_users"}, "data", allow_duplicate = True),
+    },
+    inputs = {
+        "input": {
+            "edit_button_click": Input("edit_group_button", "n_clicks"),
+            "delete_button_click": Input({"type":"group_delete_button", "index": ALL}, "n_clicks"),
+            "groupselect_value": State({"type": "grouplist_select", "index": "group_list"}, "value"),
+            "project_data_store": State("project_data_store", "data"),
+            "group_name": State("groupname_input", "value"),
+            "group_checkbox_state": {
+                "project": State("group_checkbox_project", "checked"),
+                "edge": State("group_checkbox_edge", "data"),
+            },
+            "table_data": {
+                "project_competence": State("project_competence_table", "children"),
+                "competence_select": State("competence_select", "data"),
+                "grouplist_select": State({"type": "grouplist_select", "index": "group_users"}, "data"),
+            },
+        }
+    },
+    prevent_initial_call = True
+)
+def GrouplistButtonClick(input):
+    project_data = json.loads(input["project_data_store"])
+
+    if ctx.triggered[0]["value"]:
+        if "index" in ctx.triggered_id:
+            if not functions.DeleteGroup(ctx.triggered_id["index"]): raise PreventUpdate
+        else: 
+            if input["groupselect_value"]: 
+                if not functions.RenameGroup(input["group_name"], int(input["groupselect_value"])): raise PreventUpdate
+            else: 
+                if not functions.AddGroup(input["group_name"], project_data["id"]): raise PreventUpdate
+            
+        output = {}
+        output["group_list_table"] = functions.CreateTableContent(["Группа", "Удалить группу"], functions.GetGroupListTableData(project_data["id"]))
+        output["project_competence_table"] = functions.CreateTableContent(["Группа", "Компетентность"], functions.GetGroupProjectCompetenceData(project_data["id"])) if input["group_checkbox_state"]["project"] else input["table_data"]["project_competence"]
+        
+        output["group_select_list"] = functions.GetSelectData("competence_select", project_data["id"], True)
+        output["group_select_users"] = output["group_select_list"]
+        output["competence_select"] = output["group_select_list"] if input["group_checkbox_state"]["edge"] else input["table_data"]["competence_select"]
+
+        return output
+    
+    raise PreventUpdate
+    
+@dash.callback(
+    Output("group_users_table", "children", allow_duplicate = True),
+    Output("groupadd_user", "disabled"),
+    Input({"type": "grouplist_select", "index": "group_users"}, "value"),
+    Input("groupuser_select", "value"),
+    State("project_data_store", "data"),
+    prevent_initial_call = True
+)
+def SelectUserGroups(groupselect_value, userselect_value, project_data_store):
+    project_data = json.loads(project_data_store)
+
+    add_button_disabled = not groupselect_value or not userselect_value
+    if not add_button_disabled: add_button_disabled = functions.CheckIfUserInGroup(int(groupselect_value), int(userselect_value))
+
+    table_data = functions.CreateTableContent(["Пользователь", "Удалить из группы"], functions.GetGroupUsersTableData(project_data["id"]))
+
+    return table_data, add_button_disabled
+
+@dash.callback(
+    Output("group_users_table", "children", allow_duplicate = True),
+    Output("groupuser_select", "value"),
+    Input("groupadd_user", "n_clicks"),
+    Input({"type": "groupdata_button", "index": ALL}, "n_clicks"),
+    State({"type": "grouplist_select", "index": "group_users"}, "value"),
+    State("groupuser_select", "value"),
+    State("project_data_store", "data"),
+    prevent_initial_call = True
+)
+def EditGroupUsers(add_user, delete_user, groupselect_value, userselect_value, project_data_store):
+    project_data = json.loads(project_data_store)
+
+    if ctx.triggered[0]["value"]:
+        if "index" in ctx.triggered_id:
+            if not functions.DeleteUserFromGroup(ctx.triggered_id["index"]): raise PreventUpdate
+        else: 
+            if not functions.AddUserToGroup(int(groupselect_value), int(userselect_value)): raise PreventUpdate
+
+        table_data = functions.CreateTableContent(["Пользователь", "Удалить из группы"], functions.GetGroupUsersTableData(project_data["id"]))
+
+        return table_data, groupselect_value
+    
+    raise PreventUpdate
+       

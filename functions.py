@@ -788,7 +788,7 @@ def GetUserData(login):
     return user_data
 
 #Получить список проектов пользователя
-def GetUserProjects(user_id):
+def GetUserProjectsTableData(user_id):
     query = f"""select
         tbl_projects.id,
         tbl_projects.project_name,
@@ -914,6 +914,7 @@ def InsertNewProject(user_id):
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 
+#Получить идентификатор пользователя в проекте
 def GetUserdataId(user_id, project_id):
     query = f"select id from tbl_userdata where user_id = {user_id} and project_id = {project_id}"
     cursor.execute(query)
@@ -921,7 +922,7 @@ def GetUserdataId(user_id, project_id):
         return cursor.fetchone()[0]
     except: return None
 
-#Получить пользователей, учавствующих в проекте
+#Получить пользователей, участвующих в проекте
 def GetProjectUserdata(project_id):
     query = f"""select
         tbl_userdata.id,
@@ -963,6 +964,35 @@ def GetUserTableData(project_id, access_level):
     table_data["delete"] = [dmc.Button(id = {"type": "delete_button", "index": row["id"]}, children = "Удалить", color = "red", disabled = bool(row["access_level"] >= access_level)) for index, row in table_data.iterrows()]
 
     table_data.drop(["de_completed", "ce_completed", "access_level", "login", "id"], axis = 1, inplace = True)
+    table_data = table_data.to_dict("records")
+
+    return table_data
+
+#Получить содержимое таблицы групп из раздела "Управление группами"
+def GetGroupListTableData(project_id):
+    query = f"select id, group_name from tbl_groups where project_id = {project_id}"
+
+    cursor.execute(query)
+    table_data = pd.DataFrame(cursor.fetchall(), columns = ["id", "name"])
+    table_data["delete"] = [dmc.Button(id = {"type": "group_delete_button", "index": row["id"]}, children = "Удалить", color = "red") for index, row in table_data.iterrows()]
+    table_data.drop(["id"], axis = 1, inplace = True)
+
+    table_data = table_data.to_dict("records")
+
+    return table_data
+
+#Получить содержимое таблицы состава группы из раздела "Управление группами"
+def GetGroupUsersTableData(group_id):
+    query = f"""select tbl_groupdata.id, tbl_users.user_name
+        from tbl_users
+        inner join tbl_groupdata on tbl_users.id = tbl_groupdata.user_id
+        where tbl_groupdata.group_id = {group_id}"""
+
+    cursor.execute(query)
+    table_data = pd.DataFrame(cursor.fetchall(), columns = ["id", "name"])
+    table_data["delete"] = [dmc.Button(id = {"type": "groupdata_button", "index": row["id"]}, children = "Удалить", color = "red") for index, row in table_data.iterrows()]
+    table_data.drop(["id"], axis = 1, inplace = True)
+
     table_data = table_data.to_dict("records")
 
     return table_data
@@ -1627,10 +1657,6 @@ def RemoveCompletedState(project_data):
 
     return True
 
-#Получить группы по проекту
-def GetProjectGroups(project_id):
-    query = "get "
-
 
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 #Страница аналитики --------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -2035,7 +2061,7 @@ def GetSelectData(select_id, project_id = 0, group_checked = False):
         data["value"] = data["value"].astype(str)
         data = data.to_dict("records")
 
-    if select_id == "group_select":
+    if select_id == "grouplist_select":
         query = f"select id, group_name from tbl_groups where project_id = {project_id}"
         cursor.execute(query)
         data = pd.DataFrame(cursor.fetchall(), columns = ["value", "label"])
@@ -2099,3 +2125,96 @@ def GetUserNodesForSimpleGrid(source_node_id, project_data, elements = None):
 
 
 
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#Управление группами -------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#Проверить наличие группы с таким названием в проекте
+def CheckExistingGroups(group_name, project_id):
+    query = f"select count(id) from tbl_groups where group_name = '{group_name}' and project_id = {project_id}"
+    
+    try:
+        cursor.execute(query)
+        count = cursor.fetchone()[0]
+        return bool(count)
+    except: return None
+
+#Проверить есть ли пользователь в группе
+def CheckIfUserInGroup(group_id, user_id):
+    query = f"select count(id) from tbl_groupdata where group_id = {group_id} and user_id = {user_id}"
+    cursor.execute(query)
+    try:
+        count = cursor.fetchone()[0]
+        return bool(count)
+    except: return None
+
+#Переименовать группу
+def RenameGroup(group_name, group_id):
+    query = f"update tbl_groups set group_name = '{group_name}' where id = {group_id}"
+
+    try:
+        cursor.execute(query)
+        connection.commit()
+    except: return False
+
+    return True
+
+#Добавить группу
+def AddGroup(group_name, project_id):
+    query = f"insert into tbl_groups (group_name, project_id) values ('{group_name}', {project_id})"
+
+    try:
+        cursor.execute(query)
+        connection.commit()
+    except: return False
+
+    return True
+
+#Удалить группу
+def DeleteGroup(group_id):
+    query = f"delete from tbl_groups where id = {group_id}"
+
+    try:
+        cursor.execute(query)
+        connection.commit()
+    except: return False
+
+    return True
+
+#Добавить пользователя в группу
+def AddUserToGroup(group_id, user_id):
+    query = f"insert into tbl_groupdata (group_id, user_id) values ({group_id}, {user_id})"
+
+    try:
+        cursor.execute(query)
+        connection.commit()
+    except: return False
+
+    return True
+
+#Удалить пользователя из группы
+def DeleteUserFromGroup(groupdata_id):
+    query = f"delete from tbl_groupdata where id = {groupdata_id}"
+
+    try:
+        cursor.execute(query)
+        connection.commit()
+    except: return False
+
+    return True
+
+#Удалить пользователя из всех групп по проекту
+def DeleteUserFromAllProjectGroups(user_id, project_id):
+    query = f"""delete from tbl_groupdata
+        using tbl_groups
+        where
+        tbl_groups.id = tbl_groupdata.group_id and
+        tbl_groupdata.user_id = {user_id} and
+        tbl_groups.project_id = {project_id}"""
+
+    try:
+        cursor.execute(query)
+        connection.commit()
+    except: return False
+
+    return True

@@ -64,7 +64,7 @@ def layout():
                                 ),
                                 dmc.Table(
                                     id = "project_table", 
-                                    children = functions.CreateTableContent(["Название", "Этап", "Роль в проекте", "Ссылка"], functions.GetUserProjects(current_user.userdata["id"])),
+                                    children = functions.CreateTableContent(["Название", "Этап", "Роль в проекте", "Перейти к проекту"], functions.GetUserProjectsTableData(current_user.userdata["id"])),
                                     highlightOnHover = True,
                                     withTableBorder = True,
                                     fz = "md"
@@ -115,12 +115,11 @@ def ProjectChoice(clickdata):
 @dash.callback(
     Output("project_table", "children"),
     Input("create_project", "n_clicks"),
-    State("project_table", "children"),
     prevent_initial_call = True
 )
-def CreateProject(clickdata, table_data):
+def CreateProject(clickdata):
     if functions.InsertNewProject(current_user.userdata["id"]):
-        project_data = functions.GetUserProjects(current_user.userdata["id"])
-        body = dmc.TableTbody([dmc.TableTr([dmc.TableTd(element[key]) for key in element.keys()]) for element in project_data])
-        table_data[1] = body
-    return table_data
+        table_data = functions.CreateTableContent(["Название", "Этап", "Роль в проекте", "Перейти к проекту"], functions.GetUserProjectsTableData(current_user.userdata["id"]))
+        return table_data
+    
+    raise PreventUpdate
