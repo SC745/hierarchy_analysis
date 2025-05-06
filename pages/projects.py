@@ -32,22 +32,20 @@ def layout():
                 dcc.Store(id="comp_data_store", storage_type='session', clear_data=True),
                 dmc.AppShellHeader(
                     children = [
-                        dmc.Box(
-                            children = [
-                                dmc.Menu(
-                                    children = [
-                                        dmc.MenuTarget(dmc.Text(functions.GetShortUsername(current_user.userdata["name"]))),
-                                        dmc.MenuDropdown(
-                                            children = [
-                                                dmc.MenuItem(id = {"type": "logout_button", "index": "projects"}, leftSection = DashIconify(icon = "mingcute:exit-fill"), children = "Выйти", c = "red")
-                                            ]
-                                        )
-                                    ],
-                                    trigger="hover",
-                                )
-                            ],
-                            px = "md",
-                            style = {"display":"flex", "justify-content":"end"}
+                        dmc.Box(children=[
+                            dmc.Center(dmc.Text(children="Список проектов", size='lg')),
+                            dmc.Group(children=[
+                            dmc.Center(dmc.Text(functions.GetShortUsername(current_user.userdata["name"]))),
+                            dmc.Flex(children=[dmc.NavLink(
+                                id = {"type": "logout_button", "index": "projects"},
+                                label = "",
+                                leftSection = DashIconify(icon = "mingcute:exit-fill"),
+                                c='red'
+                                )]),
+                            ]),
+                        ],
+                        px = "md",
+                        style = {"display":"flex", "justify-content":"space-between"}
                         )
                     ]
                 ),
@@ -57,17 +55,16 @@ def layout():
                             children = [
                                 dmc.Box(
                                     children = [
-                                        dmc.Text("Проекты", fz = 24, fw = 500),
+                                        dmc.Text("Список проектов", fz = 24, fw = 500),
                                         dmc.Button("Создать", id = "create_project")
                                     ],
                                     style = {"display":"flex", "justify-content":"space-between"}
                                 ),
                                 dmc.Table(
                                     id = "project_table", 
-                                    children = functions.CreateTableContent(["Название", "Этап", "Роль в проекте", "Перейти к проекту"], functions.GetUserProjectsTableData(current_user.userdata["id"])),
+                                    children = functions.CreateTableContent(["Название", "Этап", "Роль в проекте", "Ссылка"], functions.GetUserProjectsTableData(current_user.userdata["id"])),
                                     highlightOnHover = True,
-                                    withTableBorder = True,
-                                    fz = "md"
+                                    withTableBorder = True
                                 )
                             ],
                             gap = "xs"
@@ -77,7 +74,7 @@ def layout():
                     px = "md"
                 ),
             ],
-            header={"height": "30px"},
+            header={"height": "50px"},
         )
     
         layout = dmc.MantineProvider(layout)

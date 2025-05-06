@@ -109,7 +109,7 @@ def layout():
                                     ],
                                     gap = "md",
                                 ),
-                                dmc.Text(project_data["name"] + " (" + project_data["status"]["name"] + ")"),
+                                dmc.Text(id="project_name_header_text", children=project_data["name"] + " (" + project_data["status"]["name"] + ")"),
                                 dmc.Menu(
                                     children = [
                                         dmc.MenuTarget(dmc.Text(functions.GetShortUsername(current_user.userdata["name"]))),
@@ -338,16 +338,20 @@ def RedirectMenuItems(clickdata, project_data_store, element_data_store):
     Output({"type": "redirect", "index": "project"}, "pathname", allow_duplicate = True),
     Input("compdata_button", "n_clicks"),
     State("current_node_id", "data"),
+    State("name_input", "value"),
+    State("project_name_header_text", "children"),
     prevent_initial_call = True
 )
-def RedirectToNodeCompEval(clickdata, current_node_id):
+def RedirectToNodeCompEval(clickdata, current_node_id, current_node_name, project_name_header_text):
     if clickdata is None:
         raise PreventUpdate
     else:
         page_project = json.loads(session["page_project"])
         page_compeval = {}
         page_compeval["project_id"] = page_project["project_id"]
+        page_compeval["project_name"] = project_name_header_text
         page_compeval["current_node_id"] = current_node_id
+        page_compeval["current_node_name"] = current_node_name
         page_compeval["cursor"] = 0
         session["page_compeval"] = json.dumps(page_compeval, cls = functions.NpEncoder)
         return "/compeval"

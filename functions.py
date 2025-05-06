@@ -2071,58 +2071,39 @@ def GetSelectData(select_id, project_id = 0, group_checked = False):
 
     return data
 
-#Построить таблицу сравнительной оценки
-def MakeSimpleGrid(superiority_data):
-    source_node_name = superiority_data[0]["source_node_name"]
-    superiority_data = pd.DataFrame(superiority_data)
-    targret_node_names = list(set(list(superiority_data["t1_node_name"]) + list(superiority_data["t2_node_name"])))
-    targret_node_names.sort()
-    superiority_data = superiority_data.to_dict("records")
-
-
-    matrix_dim = len(targret_node_names)
-
-    simple_grid_children = [0] * pow(matrix_dim + 1, 2)
-    for index, value in enumerate(simple_grid_children):
-        simple_grid_children[index]=dmc.Box("")
-
-    simple_grid_children[0] = dmc.Center(dmc.Text(source_node_name, truncate='end', pl=5), className="hi-cell-root") #корень 
-    for index, targret_node_name in enumerate(targret_node_names): 
-        simple_grid_children[index + 1] = dmc.Center(dmc.Text(targret_node_name, truncate='end', pl=5), className="hi-cell-up") #верхние 
-        simple_grid_children[(matrix_dim + 2) * (index + 1)] = dmc.Center(dmc.Text("1"), className="hi-cell-ro") #диагональ
-        simple_grid_children[(matrix_dim + 1) * (index + 1)] = dmc.Center(dmc.Text(targret_node_name, truncate='end', pl=5), className="hi-cell-left") #слева
-    
-    maxtrix_offset = 3
-    list_index = matrix_dim + maxtrix_offset
-    opp_index = matrix_dim + maxtrix_offset - 1
-    for index, superiority_data_item in enumerate(superiority_data):
-        
-        #opp_index = list_index + (index % 2 + 1) * matrix_dim
-        opp_index+=matrix_dim+1
-        
-        if superiority_data_item["superior"]: 
-            simple_grid_children[list_index] = dmc.Box(dmc.Button(id = {"type": "upper_node", "index": superiority_data_item["table_id"]}, children = str(superiority_data_item["code"]), radius=0, className="hi-cell-btn"), className="hi-cell")
-            simple_grid_children[opp_index] = dmc.Box(dmc.Button(id = {"type": "lower_node", "index": superiority_data_item["table_id"]}, children = "1/" + str(superiority_data_item["code"]) if str(superiority_data_item["code"]) != "1" else "1", radius=0, className="hi-cell-btn"), className="hi-cell")
-        else:
-            simple_grid_children[list_index] = dmc.Box(dmc.Button(id = {"type": "upper_node", "index": superiority_data_item["table_id"]}, children = "1/" + str(superiority_data_item["code"]) if str(superiority_data_item["code"]) != "1" else "1", radius=0, className="hi-cell-btn"), className="hi-cell")
-            simple_grid_children[opp_index] = dmc.Box(dmc.Button(id = {"type": "lower_node", "index": superiority_data_item["table_id"]}, children = str(superiority_data_item["code"]), radius=0, className="hi-cell-btn"), className="hi-cell")
-
-        list_index += 1
-        if list_index % (matrix_dim + 1) == 0:
-            maxtrix_offset+=1 
-            list_index += maxtrix_offset-1
-            opp_index = list_index - 1
-
-
-    return dmc.SimpleGrid(cols = matrix_dim + 1, spacing = '0', verticalSpacing = '0', children = simple_grid_children)
-
 #Получить данные сравнительной оценки для пользователя
 def GetUserNodesForSimpleGrid(source_node_id, project_data, elements = None):
-    if elements: nodes_df, edges_df = GetProjectDfs(project_data, None)
-    else: nodes_df, edges_df = ElementsToDfs(project_data, None)
+    if elements: nodes_df, edges_df = ElementsToDfs(elements)
+    else: nodes_df, edges_df = GetProjectDfs(project_data)
     target_ids = list(edges_df.loc[edges_df["source"] == source_node_id]["target"])
     return list(nodes_df.loc[nodes_df["id"].isin(target_ids)]["name"])
 
+#Получить словарь SuperiorityNames
+def GetSuperiorityNames():
+    query = f"""select superiority_code code, superiority_name name from public.tbl_superiority order by superiority_code"""
+    cursor.execute(query)
+    #result = pd.DataFrame(cursor.fetchall(), columns = ["code", "name"]).to_dict("records")
+    result = dict(cursor.fetchall())
+    return result
+
+#Записать в базу сравнительную оценку
+def SaveCompEvalToBD(selected_data):
+    #Записать в базу данных данные по selectes_table_id, но если superior_value равно 1, то поставить superior_check=True (только в базе)
+
+    compdata_id = selected_data["table_id"]
+    superiority_code = selected_data["code"]
+    superior = selected_data["superior"]
+
+    try:
+        query = f"""update tbl_compdata set 
+        superior = case when {superiority_code} = 1 then true else {superior} end,
+        superiority_id = (select id from tbl_superiority where superiority_code = {superiority_code}) 
+        where tbl_compdata.id = {compdata_id}"""
+        cursor.execute(query)
+        connection.commit()
+    except: return False
+    
+    return True
 
 
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
