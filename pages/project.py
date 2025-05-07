@@ -46,11 +46,6 @@ def layout():
     page_compeval = session.pop("page_compeval", None)
     page_analytics = session.pop("page_analytics", None)
 
-    #Очистка данных
-    #project_data = session.pop("project_data", None)
-    #element_data = session.pop("element_data", None)
-    #comp_data = session.pop("comp_data", None)
-
     if not current_user.is_authenticated:
         return dcc.Location(id = {"type": "unauthentificated", "index": "project"}, pathname = "/login")
     elif not "page_project" in session:
@@ -58,69 +53,27 @@ def layout():
     else:
         page_project = json.loads(session["page_project"])
 
-        project_data = functions.GetProjectData(current_user.userdata["id"], page_project["project_id"])
-        element_data = functions.GetElementData(project_data, current_user.userdata["id"])
-        
-        project_data_store = json.dumps(project_data, cls = functions.NpEncoder)
-        element_data_store = json.dumps(element_data, cls = functions.NpEncoder)
-
         layout = dmc.AppShell(
             children = [
                 dcc.Location(id = {"type": "redirect", "index": "project"}, pathname = "/project"),
-                dcc.Store(id="project_data_store", storage_type='session', data=project_data_store),
-                dcc.Store(id="element_data_store", storage_type='session', data=element_data_store),
+                dcc.Store(id="project_data_store", storage_type='session', clear_data=True),
+                dcc.Store(id="element_data_store", storage_type='session', clear_data=True),
                 dcc.Store(id="comp_data_store", storage_type='session', clear_data=True),
-                #dcc.Interval(id={'type': 'load_interval', 'index': 'project'}, n_intervals=0, max_intervals=1, interval=1), # max_intervals=0 - запустится 1 раз
+                dcc.Store(id = {"type": "init_store", "index": "project"}, storage_type = "memory"),
+                dcc.Store(id = "prev_action", storage_type = "memory", data = False),
+                dcc.Interval(id={'type': 'load_interval', 'index': 'project'}, n_intervals=0, max_intervals=1, interval=1), # max_intervals=0 - запустится 1 раз
                 dmc.AppShellHeader(
                     children = [
                         dmc.Box(
                             children = [
-                                dcc.Store(id = {"type": "init_store", "index": "project"}, storage_type = "memory"),
-                                dcc.Store(id = "prev_action", storage_type = "memory", data = False),
-                                dmc.Flex(
-                                    children = [
-                                        dmc.Menu(
-                                            children = [
-                                                dmc.MenuTarget(dmc.Text("Проект")),
-                                                dmc.MenuDropdown(
-                                                    children = [
-                                                        dmc.MenuItem(id = {"type":"menu_navlink", "index":"/settings"}, leftSection = DashIconify(icon = "mingcute:settings-3-line"), children = "Настройки", disabled = project_data["role"]["access_level"] < 3),
-                                                        dmc.MenuItem(id = {"type":"menu_navlink", "index":"/analytics"}, leftSection = DashIconify(icon = "mingcute:chart-line-fill"), children = "Аналитика", disabled = project_data["status"]["stage"] < 4),
-                                                        dmc.MenuItem(id = "restore_initial_hierarchy", leftSection = DashIconify(icon = "mingcute:refresh-3-fill"), children = "Восстановить базовую иерархию", disabled = not (project_data["status"]["stage"] == 2 and project_data["role"]["access_level"] > 1)),
-                                                        dmc.MenuDivider(),
-                                                        dmc.MenuItem(id = {"type":"menu_navlink", "index":"/projects"}, leftSection = DashIconify(icon = "mingcute:list-check-fill"), children = "Список проектов")
-                                                    ]
-                                                )
-                                            ],
-                                            trigger="hover",
-                                        ),
-                                        dmc.Menu(
-                                            children = [
-                                                dmc.MenuTarget(dmc.Text("Состояние")),
-                                                dmc.MenuDropdown(
-                                                    children = [
-                                                        dmc.MenuItem(children = dmc.Checkbox(id = {"type": "stage_completed", "index": "de_completed"}, label = "Оценка зависимостей завершена", checked = project_data["completed"]["de_completed"], disabled = project_data["status"]["stage"] != 2 or project_data["role"]["access_level"] < 2), disabled = project_data["status"]["stage"] != 2 or project_data["role"]["access_level"] < 2),
-                                                        dmc.MenuItem(children = dmc.Checkbox(id = {"type": "stage_completed", "index": "ce_completed"}, label = "Сравнительная оценка завершена", checked = project_data["completed"]["ce_completed"], disabled = project_data["status"]["stage"] != 3 or project_data["role"]["access_level"] < 2), disabled = project_data["status"]["stage"] != 3 or project_data["role"]["access_level"] < 2),
-                                                    ]
-                                                )
-                                            ],
-                                            trigger="hover",
-                                        ),
-                                    ],
-                                    gap = "md",
+                                dmc.Flex(children=dmc.NavLink(id = {"type":"menu_navlink", "index":"/projects"}, label = "К списку проектов", leftSection = DashIconify(icon = "mingcute:list-check-fill"))),
+                                dmc.Center(dmc.Text(id="project_name_header_text", size='lg')),                                
+                                dmc.Group(
+                                    children=[
+                                        dmc.Center(dmc.Text(functions.GetShortUsername(current_user.userdata["name"]))),
+                                        dmc.Flex(children=dmc.NavLink(id = {"type": "logout_button", "index": "project"}, leftSection = DashIconify(icon = "mingcute:exit-fill"), c='red')),
+                                    ]
                                 ),
-                                dmc.Text(id="project_name_header_text", children=project_data["name"] + " (" + project_data["status"]["name"] + ")"),
-                                dmc.Menu(
-                                    children = [
-                                        dmc.MenuTarget(dmc.Text(functions.GetShortUsername(current_user.userdata["name"]))),
-                                        dmc.MenuDropdown(
-                                            children = [
-                                                dmc.MenuItem(id = {"type": "logout_button", "index": "project"}, leftSection = DashIconify(icon = "mingcute:exit-fill"), children = "Выйти", c = "red")
-                                            ]
-                                        )
-                                    ],
-                                    trigger="hover",
-                                )
                             ],
                             px = "md",
                             style = {"display":"flex", "justify-content":"space-between"}
@@ -136,7 +89,7 @@ def layout():
                                         dmc.ActionIcon(id = {"type": "step_button", "index": "rollback"}, children = DashIconify(icon = "mingcute:corner-down-left-fill", width = 20), size = "input-sm", variant = "default", disabled = True),
                                         dmc.ActionIcon(id = {"type": "step_button", "index": "cancelrollback"}, children = DashIconify(icon = "mingcute:corner-down-right-fill", width = 20), size = "input-sm", variant = "default", disabled = True),
                                         dmc.ActionIcon(id = "locate", children = DashIconify(icon = "mingcute:location-line", width = 20), size = "input-sm", variant = "default"),
-                                        dmc.ActionIcon(id = "add_node", children = DashIconify(icon = "mingcute:cross-line", width = 20), size = "input-sm", variant = "light", disabled = project_data["status"]["stage"] != 1 or project_data["role"]["access_level"] < 3, color = "green"),
+                                        dmc.ActionIcon(id = "add_node", children = DashIconify(icon = "mingcute:cross-line", width = 20), size = "input-sm", variant = "light", disabled = True, color = "green"),
                                         dmc.ActionIcon(id = "save_graph", children = DashIconify(icon = "mingcute:save-2-line", width = 20), size = "input-sm", variant = "light", disabled = True),
                                     ],
                                     grow=True,
@@ -165,13 +118,13 @@ def layout():
                                                     children = [
                                                         dmc.Flex(
                                                             children = [
-                                                                dmc.TextInput(debounce=500, id = "name_input", label = "Название", disabled = bool(project_data["status"]["stage"] > 1) or bool(project_data["role"]["access_level"] < 3)),
+                                                                dmc.TextInput(debounce=500, id = "name_input", label = "Название", disabled = True),
                                                                 dmc.Checkbox(id = "node_checkbox", size = 36, checked = True)
                                                             ],
                                                             gap = "md",
                                                             align = "flex-end",
                                                         ),
-                                                        dmc.Button(id = "compdata_button", children = "Оценить", display = "block" if project_data["status"]["stage"] == 3 else "none")
+                                                        dmc.Button(id = "compdata_button", children = "Оценить", display = "none")
                                                     ],
                                                     p = "md",
                                                     gap = 5
@@ -199,83 +152,202 @@ def layout():
                         )
                     ]
                 ),
-                dmc.AppShellMain([
-                    cyto.Cytoscape(
-                        id="graph",
-                        layout={"name": "preset"},
-                        style={
-                            "width": "100%",
-                            "height": "calc(100vh - 30px)",
-                            "position": "relative",
-                        },
-                        stylesheet=[
-                            #Group selectors
-                            {
-                                "selector": "node",
-                                "style": {
-                                    "shape": "rectangle",
-                                    "content": "data(name)",
-                                    "width": "data(width)",
-                                    "height": "data(height)",
-                                    "text-valign": "center",
-                                    "background-color": "#ffffff",
-                                    "border-width": "3px",
-                                    "font-size": "14px",
-                                    "text-wrap": "wrap",
-                                    "text-max-width": "80px"
+                dmc.AppShellMain(
+                    children=[
+                        dmc.Affix(
+                            dmc.Group(
+                                children=[
+                                    dmc.Menu(
+                                        children = [
+                                            dmc.MenuTarget(dmc.Button("Проект", variant="outline", color="var(--mantine-color-dark-7)", w=120)),
+                                            dmc.MenuDropdown(
+                                                children = [
+                                                    dmc.MenuItem(id = {"type":"menu_navlink", "index":"/settings"}, leftSection = DashIconify(icon = "mingcute:settings-3-line"), children = "Настройки", disabled = True),
+                                                    dmc.MenuItem(id = {"type":"menu_navlink", "index":"/analytics"}, leftSection = DashIconify(icon = "mingcute:chart-line-fill"), children = "Аналитика", disabled = True),
+                                                    dmc.MenuItem(id = "restore_initial_hierarchy", leftSection = DashIconify(icon = "mingcute:refresh-3-fill"), children = "Восстановить базовую иерархию", disabled = True),
+                                                    dmc.MenuDivider(),
+                                                    dmc.MenuItem(id = {"type":"menu_navlink", "index":"/projectswww"}, leftSection = DashIconify(icon = "mingcute:list-check-fill"), children = "Список проектов")
+                                                ]
+                                            )
+                                        ],
+                                        trigger="hover",
+                                    ),
+                                    dmc.Menu(
+                                        children = [
+                                            dmc.MenuTarget(dmc.Button("Состояние", variant="outline", color="var(--mantine-color-dark-7)", w=120)),
+                                            dmc.MenuDropdown(
+                                                children = [
+                                                    dmc.MenuItem(children = dmc.Checkbox(
+                                                        id = {"type": "stage_completed", "index": "de_completed"}, 
+                                                        label = "Оценка зависимостей завершена", 
+                                                        checked = False, 
+                                                        disabled=True
+                                                        ),
+                                                    ),
+                                                    dmc.MenuItem(children = dmc.Checkbox(
+                                                        id = {"type": "stage_completed", "index": "ce_completed"}, 
+                                                        label = "Сравнительная оценка завершена", 
+                                                        checked = False, 
+                                                        disabled = True
+                                                        ), 
+                                                    ),
+                                                ]
+                                            )
+                                        ],
+                                        trigger="hover",
+                                    ),
+                                ]
+                            ),
+                            position={"top": "55px", "left": "lg"} 
+                        ),                        
+                        cyto.Cytoscape(
+                            id="graph",
+                            layout={"name": "preset"},
+                            style={
+                                "width": "100%",
+                                "height": "calc(100vh - 50px)",
+                                "position": "relative",
+                            },
+                            stylesheet=[
+                                #Group selectors
+                                {
+                                    "selector": "node",
+                                    "style": {
+                                        "shape": "rectangle",
+                                        "content": "data(name)",
+                                        "width": "data(width)",
+                                        "height": "data(height)",
+                                        "text-valign": "center",
+                                        "background-color": "#ffffff",
+                                        "border-width": "3px",
+                                        "font-size": "14px",
+                                        "text-wrap": "wrap",
+                                        "text-max-width": "80px"
+                                    },
                                 },
-                            },
-                            #Class selectors
-                            {
-                                "selector": ".manually_deleted",
-                                'style': { #mantine red.6
-                                    "border-color": "#fa5252",
-                                    "line-color": "#fa5252"
-                                }
-                            },
-                            {
-                                "selector": ".cascade_deleted",
-                                'style': { #mantine orange.6
-                                    "border-color": "#fd7e14",
-                                    "line-color": "#fd7e14"
-                                }
-                            },
-                            {
-                                "selector": ".added",
-                                "style": { #mantine green.6
-                                    "border-color": "#40c057",
-                                    "line-color": "#40c057"
-                                }
-                            },
-                            {
-                                "selector": ".selected",
-                                "style": { #mantine blue.6
-                                    "border-color": "#228be6",
-                                    "line-color": "#228be6"
-                                }
-                            },
-                            {
-                                "selector": ".default",
-                                "style": {
-                                    "border-color": "black",
-                                    "line-color": "black"
-                                }
-                            },
-                        ],
-                        minZoom = 0.5,
-                        maxZoom = 2,
-                        autoungrabify = True,
-                        autoRefreshLayout = True,
-                        wheelSensitivity = 0.2,
-                        elements = element_data["elements"]
-                    )
-                ]),
+                                #Class selectors
+                                {
+                                    "selector": ".manually_deleted",
+                                    'style': { #mantine red.6
+                                        "border-color": "#fa5252",
+                                        "line-color": "#fa5252"
+                                    }
+                                },
+                                {
+                                    "selector": ".cascade_deleted",
+                                    'style': { #mantine orange.6
+                                        "border-color": "#fd7e14",
+                                        "line-color": "#fd7e14"
+                                    }
+                                },
+                                {
+                                    "selector": ".added",
+                                    "style": { #mantine green.6
+                                        "border-color": "#40c057",
+                                        "line-color": "#40c057"
+                                    }
+                                },
+                                {
+                                    "selector": ".selected",
+                                    "style": { #mantine blue.6
+                                        "border-color": "#228be6",
+                                        "line-color": "#228be6"
+                                    }
+                                },
+                                {
+                                    "selector": ".default",
+                                    "style": {
+                                        "border-color": "black",
+                                        "line-color": "black"
+                                    }
+                                },
+                            ],
+                            minZoom = 0.5,
+                            maxZoom = 2,
+                            autoungrabify = True,
+                            autoRefreshLayout = True,
+                            wheelSensitivity = 0.2,
+                            elements = []
+                        )
+                    ]),
             ],
-            header={"height": "30px"},
+            header={"height": "50px"},
             aside={"width": "300px"},
         )
         layout = dmc.MantineProvider(layout)
         return layout
+
+
+#Однократный запуск при обновлении страницы
+@dash.callback(
+    output = {
+        "redirect": Output({"type": "redirect", "index": "project"}, "pathname", allow_duplicate = True),
+        "project_data_store": Output("project_data_store", "data", allow_duplicate = True),
+        "element_data_store": Output("element_data_store", "data", allow_duplicate = True),
+        "graph": Output("graph", "elements", allow_duplicate = True),
+        "current_node_id": Output("current_node_id", "data", allow_duplicate = True),
+        "project_name_header_text": Output("project_name_header_text", "children"),
+        "settings_disabled": Output({"type":"menu_navlink", "index":"/settings"}, "disabled"),
+        "analytics_disabled": Output({"type":"menu_navlink", "index":"/analytics"}, "disabled"),
+        "restore_initial_hierarchy_disabled": Output("restore_initial_hierarchy", "disabled"),
+        "de_completed_checked": Output({"type": "stage_completed", "index": "de_completed"}, "checked"),
+        "de_completed_disabled": Output({"type": "stage_completed", "index": "de_completed"}, "disabled"),
+        "ce_completed_checked": Output({"type": "stage_completed", "index": "ce_completed"}, "checked"),
+        "ce_completed_disabled": Output({"type": "stage_completed", "index": "ce_completed"}, "disabled"),
+        "name_input_disabled": Output("name_input", "disabled"),
+    },
+    inputs = {
+        "input": {
+            "n_intervals": Input(component_id={'type': 'load_interval', 'index': 'project'}, component_property="n_intervals"),
+        }
+    },
+    prevent_initial_call = True
+)
+def update_store(input):
+    output = {}
+    output["redirect"] = "/project"
+    output["project_data_store"] = None
+    output["element_data_store"] = None
+    output["graph"] = []
+    output["current_node_id"] = None
+    output["project_name_header_text"] = ""
+    output["settings_disabled"] = True
+    output["analytics_disabled"] = True
+    output["restore_initial_hierarchy_disabled"] = True
+    output["de_completed_checked"] = False
+    output["de_completed_disabled"] = True
+    output["ce_completed_checked"] = False
+    output["ce_completed_disabled"] = True
+    output["name_input_disabled"] = True
+
+    page_project = json.loads(session["page_project"])
+    project_data = functions.GetProjectData(current_user.userdata["id"], page_project["project_id"])
+    element_data = functions.GetElementData(project_data, current_user.userdata["id"])
+
+    output["project_name_header_text"] = project_data["name"] + " (" + project_data["status"]["name"] + ")"
+    output["settings_disabled"] = project_data["role"]["access_level"] < 3
+    output["analytics_disabled"] = project_data["status"]["stage"] < 4
+    output["restore_initial_hierarchy_disabled"] = not (project_data["status"]["stage"] == 2 and project_data["role"]["access_level"] > 1)
+
+    output["de_completed_checked"] = project_data["completed"]["de_completed"] 
+    output["de_completed_disabled"] = project_data["status"]["stage"] != 2 or project_data["role"]["access_level"] < 2
+    output["ce_completed_checked"] = project_data["completed"]["ce_completed"] 
+    output["ce_completed_disabled"] = project_data["status"]["stage"] != 3 or project_data["role"]["access_level"] < 2
+
+    output["name_input_disabled"] = bool(project_data["status"]["stage"] > 1) or bool(project_data["role"]["access_level"] < 3)
+
+    if "current_node_id" in page_project:
+        output["current_node_id"] = page_project["current_node_id"]
+        #current_node_name = page_project["current_node_name"]
+
+    if 1==0:
+        output["redirect"] = "/projects"
+        return output
+
+    output["graph"] = element_data["elements"]
+    output["project_data_store"] = json.dumps(project_data, cls = functions.NpEncoder)
+    output["element_data_store"] = json.dumps(element_data, cls = functions.NpEncoder)
+    return output
 
 
 
@@ -293,14 +365,15 @@ def layout():
     prevent_initial_call = True
 )
 def Logout(clickdata, project_data_store, element_data_store):
-    if clickdata:
-        if project_data_store == None or element_data_store == None: raise PreventUpdate
-        project_data = json.loads(project_data_store)
-        element_data = json.loads(element_data_store)
-        SaveGraphToBD(project_data, element_data)
-        session.clear()
-        logout_user()
-        return "/login"
+    if not clickdata: raise PreventUpdate
+    if project_data_store == None or element_data_store == None: raise PreventUpdate
+
+    project_data = json.loads(project_data_store)
+    element_data = json.loads(element_data_store)
+    SaveGraphToBD(project_data, element_data)
+    session.clear()
+    logout_user()
+    return "/login"
 
 
 @dash.callback(
@@ -401,6 +474,7 @@ def SaveGraph(clickdata, project_data_store, element_data_store):
         "elements": Output("graph", "elements", allow_duplicate = True),
         "prev_action": Output("prev_action", "data", allow_duplicate = True),
         "element_data": Output("element_data_store", "data", allow_duplicate = True),
+        "compdata_button": Output("compdata_button", "display"),
     },
     inputs = {
         "input": {
@@ -416,9 +490,10 @@ def SaveGraph(clickdata, project_data_store, element_data_store):
     prevent_initial_call = True
 )
 def SelectElement(input, project_data_store, element_data_store):
-    trigger = {"id": ctx.triggered_id, "property": ctx.triggered[0]["prop_id"].split(".")[1], "value": ctx.triggered[0]["value"]}
+    #trigger = {"id": ctx.triggered_id, "property": ctx.triggered[0]["prop_id"].split(".")[-1], "value": ctx.triggered[0]["value"]}
 
     if project_data_store == None or element_data_store == None: raise PreventUpdate
+    trigger = {"id": ctx.triggered_id, "property": ctx.triggered[0]["prop_id"].split(".")[-1], "value": ctx.triggered[0]["value"]}
     project_data = json.loads(project_data_store)
     element_data = json.loads(element_data_store)
 
@@ -431,10 +506,12 @@ def SelectElement(input, project_data_store, element_data_store):
 
     if not current_node: raise PreventUpdate
 
-    if trigger["property"] == "tapNodeData":
-        element_data["state"]["selected"] = current_node
-    elif trigger["property"] == "tapEdgeData":
+    if trigger["property"] == "tapEdgeData":
         element_data["state"]["selected"] = functions.GetElementById(input["tapEdgeData"]["id"], element_data["elements"])
+        element_data["state"]["cascade_selected"] = {}
+    else:
+        element_data["state"]["selected"] = current_node
+        functions.CascadeSelect(current_node["data"]["id"], element_data)
 
     functions.ColorElements(element_data)
 
@@ -447,6 +524,7 @@ def SelectElement(input, project_data_store, element_data_store):
     output["elements"] = element_data["elements"]
     output["prev_action"] = False
     output["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
+    output["compdata_button"] = "block" if project_data["status"]["stage"] == 3 else "none"
 
     return output
 
@@ -623,6 +701,10 @@ def ElementChangeProcessing(input, project_data_store, element_data_store):
     output["rollback_disabled"] = not bool(len(element_data["steps"]["history"]))
     output["cancelrollback_disabled"] = not bool(len(element_data["steps"]["canceled"]))
     output["addnode_disabled"] = not ((bool(element_data["state"]["selected"]) or not bool(len(element_data["elements"]))) and project_data["status"]["stage"] == 1 and project_data["role"]["access_level"] > 2)
+
+    #k = project_data["status"]["stage"] != 1 or project_data["role"]["access_level"] < 3
+    
+
     output["save_graph"] = (project_data["status"]["stage"] == 1 and project_data["role"]["access_level"] < 3) or (project_data["status"]["stage"] == 2 and project_data["role"]["access_level"] < 2) or project_data["status"]["stage"] > 2
 
     if current_node: 

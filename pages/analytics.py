@@ -21,6 +21,15 @@ matrix_select_data = [
 ]
 
 
+def GetTreeSelectedItem(selected):
+    if selected == "project": item_data = {"type": "project", "id": None}
+    else:
+        item_id = int(selected.split("/")[-1])
+        if "user" in selected: item_data = {"type": "user", "id": item_id}
+        elif "group" in selected: item_data = {"type": "group", "id": item_id}
+
+    return item_data
+
 
 def layout():
     #Удаление ключей других страниц
@@ -41,26 +50,6 @@ def layout():
         return dcc.Location(id = {"type": "redirect", "index": "analytics"}, pathname = "/project")
     else:
         page_analytics = json.loads(session["page_analytics"])
-        project_data = functions.GetProjectData(current_user.userdata["id"], page_analytics["project_id"])
-        if project_data["status"]["stage"] < 4:
-            return dcc.Location(id = {"type": "redirect", "index": "analytics"}, pathname = "/project"),
-        
-        project_data_store = json.dumps(project_data, cls = functions.NpEncoder)
-
-        element_data = {}
-
-        element_data["dep_eval"] = {}
-        element_data["dep_eval"]["elements"] = functions.GetHierarchyPreset(*functions.GetAnalyticsGraphDfs(project_data["id"]))
-        element_data["dep_eval"]["selected"] = None
-
-        element_data["comp_eval"] = {}
-        element_data["comp_eval"]["elements"] = functions.GetHierarchyPreset(*functions.GetPriorityInfo(project_data))
-        element_data["comp_eval"]["selected"] = None
-        
-        element_data["incons_coef"] = {}
-        element_data["incons_coef"]["elements"] = functions.GetHierarchyPreset(*functions.GetPriorityInfo(project_data))
-        element_data["incons_coef"]["selected"] = None
-
 
         layout = dmc.AppShell(
             children = [
@@ -69,13 +58,13 @@ def layout():
                         dmc.Box(
                             children = [
                                 dcc.Location(id = {"type": "redirect", "index": "analytics"}, pathname = "/analytics"),
-                                dcc.Store(id = "project_data_store", storage_type='session', data = project_data_store),
-                                dcc.Store(id = {"type": "element_data_store", "index": "dep_eval"}, storage_type='session', data = json.dumps(element_data["dep_eval"], cls = functions.NpEncoder)),
-                                dcc.Store(id = {"type": "element_data_store", "index": "comp_eval"}, storage_type='session', data = json.dumps(element_data["comp_eval"], cls = functions.NpEncoder)),
-                                dcc.Store(id = {"type": "element_data_store", "index": "incons_coef"}, storage_type='session', data = json.dumps(element_data["incons_coef"], cls = functions.NpEncoder)),
-                                dcc.Store(id = "comp_data_store", storage_type='session', clear_data=True),
-                                dcc.Store(id = {"type": "init_store", "index": "analytics"}, storage_type = "memory"),
-                                dcc.Store(id = "prev_action", storage_type = "memory", data = False),
+                                dcc.Store(id = {"type": "element_data_store", "index": "dep_eval"}, storage_type='session', clear_data = True),
+                                dcc.Store(id = {"type": "element_data_store", "index": "comp_eval"}, storage_type='session', clear_data = True),
+                                dcc.Store(id = {"type": "element_data_store", "index": "incons_coef"}, storage_type='session', clear_data = True),
+                                dcc.Store(id= "project_data_store", storage_type='session', clear_data = True),
+                                dcc.Store(id= "element_data_store", storage_type='session', clear_data = True),
+                                dcc.Store(id = "comp_data_store", storage_type='session', clear_data = True),
+                                dcc.Interval(id={'type': 'load_interval', 'index': 'analytics'}, n_intervals=0, max_intervals=1, interval=1), # max_intervals=0 - запустится 1 раз
                                 dmc.Menu(
                                     children = [
                                         dmc.MenuTarget(dmc.Text(functions.GetShortUsername(current_user.userdata["name"]))),
@@ -102,20 +91,21 @@ def layout():
                                 dmc.NavLink(
                                     id = {"type": "analytics_navlink", "index": "dep_eval"},
                                     label = "Результат оценки связей",
-                                    leftSection = DashIconify(icon = "mingcute:user-1-line"),
+                                    leftSection = DashIconify(icon = "mingcute:directory-line"),
                                     active = True
                                 ),
                                 dmc.NavLink(
                                     id = {"type": "analytics_navlink", "index": "comp_eval"},
                                     label = "Результат сравнительной оценки",
-                                    leftSection = DashIconify(icon = "mingcute:settings-3-line"),
+                                    leftSection = DashIconify(icon = "mingcute:chart-bar-line"),
                                     active = False
                                 ),
                                 dmc.NavLink(
                                     id = {"type": "analytics_navlink", "index": "incons_coef"},
                                     label = "Коэффициент противоречивости",
                                     leftSection = DashIconify(icon = "mingcute:certificate-line"),
-                                    active = False
+                                    active = False,
+                                    display = "none"
                                 ),
                                 dmc.NavLink(
                                     id = "analytics_to_project",
@@ -132,8 +122,8 @@ def layout():
                                     selectOnClick = True,
                                     expandedIcon=DashIconify(icon="fa6-regular:folder-open"),
                                     collapsedIcon=DashIconify(icon="fa6-solid:folder-plus"),
-                                    data = functions.GetAnalyticsTreeData(project_data["id"], False),
-                                    selected = "project",
+                                    data = functions.GetAnalyticsTreeData(page_analytics["project_id"], False),
+                                    selected = ["project"],
                                     display = "block",
                                 ),
                                 dmc.Tree(
@@ -141,8 +131,8 @@ def layout():
                                     selectOnClick = True,
                                     expandedIcon=DashIconify(icon="fa6-regular:folder-open"),
                                     collapsedIcon=DashIconify(icon="fa6-solid:folder-plus"),
-                                    data = functions.GetAnalyticsTreeData(project_data["id"], True),
-                                    selected = "project",
+                                    data = functions.GetAnalyticsTreeData(page_analytics["project_id"], True),
+                                    selected = ["project"],
                                     display = "none",
                                 ),
                                 dmc.Tree(
@@ -150,8 +140,8 @@ def layout():
                                     selectOnClick = True,
                                     expandedIcon=DashIconify(icon="fa6-regular:folder-open"),
                                     collapsedIcon=DashIconify(icon="fa6-solid:folder-plus"),
-                                    data = functions.GetAnalyticsTreeData(project_data["id"], True),
-                                    selected = "project",
+                                    data = functions.GetAnalyticsTreeData(page_analytics["project_id"], True),
+                                    selected = ["project"],
                                     display = "none",  
                                 ),
                             ],
@@ -217,7 +207,7 @@ def layout():
                                     autoungrabify = True,
                                     autoRefreshLayout = True,
                                     wheelSensitivity = 0.2,
-                                    elements = element_data["dep_eval"]["elements"]
+                                    elements = []
                                 ),
                             ],
                             id = {"type": "analytics_page", "index": "dep_eval"},
@@ -286,27 +276,29 @@ def layout():
                                     autoungrabify = True,
                                     autoRefreshLayout = True,
                                     wheelSensitivity = 0.2,
-                                    elements = element_data["comp_eval"]["elements"]
+                                    elements = []
                                 ),
                                 dmc.Divider(),
                                 dmc.Box(
                                     children = [
+                                        dmc.Select(id = "matrix_select", data = matrix_select_data, label = "Выберите матрицу", clearable = False, value = "comparison_matrix", size = "md", w = 350, pb = "sm"),
                                         dmc.Box(
                                             children = [
-                                                dmc.Select(id = "matrix_select", data = matrix_select_data, label = "Матрица", clearable = False, value = "competence_matrix", size = "md", w = 350, pb = "sm"),
                                                 dmc.Table(
                                                     id = "comp_eval_table",
-                                                    data = [],
+                                                    data = {"body": []},
                                                     highlightOnHover = True,
                                                     withTableBorder = True,
                                                     withRowBorders = True,
+                                                    withColumnBorders = True,
                                                     fz = "md",
+                                                    
                                                 ),
                                             ],
-                                            id = "comp_eval_table_container",
-                                            display = "none"
+                                            display = "none",
+                                            id = "matrix_container"
                                         ),
-                                        dmc.Center(children = dmc.Text("Выберите элемент", fz = 24, fw = 500), display = "block", id = "comp_eval_placeholder")
+                                        dmc.Center(children = dmc.Text("Выберите элемент", fz = "xl", fw = 500), display = "block", ta = "center", id = "comp_eval_placeholder")
                                     ],
                                     p = "sm"
                                 )
@@ -325,7 +317,7 @@ def layout():
                                         "height": "calc(50vh - 30px)",
                                         "position": "relative"
                                     },
-                                    stylesheet=[
+                                    stylesheet = [
                                         #Group selectors
                                         {
                                             "selector": "node",
@@ -377,7 +369,7 @@ def layout():
                                     autoungrabify = True,
                                     autoRefreshLayout = True,
                                     wheelSensitivity = 0.2,
-                                    elements = element_data["incons_coef"]["elements"]
+                                    elements = []
                                 ),
                                 dmc.Divider(),
                                 dmc.Box("table_section")
@@ -395,14 +387,83 @@ def layout():
         return layout
 
 
-def GetTreeSelectedItem(selected):
-    if selected == "project": item_data = {"type": "project", "id": None}
-    else:
-        item_id = int(selected.split("/")[-1])
-        if "user" in selected: item_data = {"type": "user", "id": item_id}
-        elif "group" in selected: item_data = {"type": "group", "id": item_id}
 
-    return item_data
+#Однократный запуск при обновлении страницы
+@dash.callback(
+    output = {
+        "store": {
+            "dep_eval": Output({"type": "element_data_store", "index": "dep_eval"}, 'data', allow_duplicate = True),
+            "comp_eval": Output({"type": "element_data_store", "index": "comp_eval"}, 'data', allow_duplicate = True),
+            "incons_coef": Output({"type": "element_data_store", "index": "incons_coef"}, 'data', allow_duplicate = True),
+            "project_data_store": Output("project_data_store", 'data', allow_duplicate = True),
+        },
+        "graph": {
+            "dep_eval": Output({"type": "analytics_graph", "index": "dep_eval"}, "elements",  allow_duplicate = True),
+            "comp_eval": Output({"type": "analytics_graph", "index": "comp_eval"}, "elements", allow_duplicate = True),
+            "incons_coef": Output({"type": "analytics_graph", "index": "incons_coef"}, "elements", allow_duplicate = True),
+        },
+        "redirect": Output({"type": "redirect", "index": "analytics"}, "pathname", allow_duplicate = True)
+    },
+    inputs = {
+        "input": {
+            "n_intervals": Input(component_id={'type': 'load_interval', 'index': 'analytics'}, component_property="n_intervals"),
+        }
+    },
+    prevent_initial_call = True
+)
+def update_store(input):
+    page_analytics = json.loads(session["page_analytics"])
+    project_data = functions.GetProjectData(current_user.userdata["id"], page_analytics["project_id"])
+
+    output = {}
+
+    output["store"] = {}
+    output["store"]["dep_eval"] = None
+    output["store"]["comp_eval"] = None
+    output["store"]["incons_coef"] = None
+    output["store"]["project_data_store"] = None
+
+    output["graph"] = {}
+    output["graph"]["dep_eval"] = []
+    output["graph"]["comp_eval"] = []
+    output["graph"]["incons_coef"] = []
+    output["redirect"] = "/analytics"
+
+    if project_data["status"]["stage"] < 4:
+        page_project = {}
+        page_project["project_id"] = page_analytics["project_id"]
+        session["page_project"] = json.dumps(page_project, cls = functions.NpEncoder)
+
+        output["redirect"] = "/project"
+        return output
+
+    element_data = {}
+
+    element_data["dep_eval"] = {}
+    element_data["dep_eval"]["elements"] = functions.GetHierarchyPreset(*functions.GetDepEvalGraphDfs(project_data["id"]))
+    element_data["dep_eval"]["selected"] = None
+
+    element_data["comp_eval"] = {}
+    element_data["comp_eval"]["elements"] = functions.GetHierarchyPreset(*functions.GetPriorityInfo(project_data))
+    element_data["comp_eval"]["selected"] = None
+    
+    element_data["incons_coef"] = {}
+    element_data["incons_coef"]["elements"] = functions.GetHierarchyPreset(*functions.GetPriorityInfo(project_data))
+    element_data["incons_coef"]["selected"] = None
+
+    functions.ColorAnalyticsElements(element_data["comp_eval"], project_data["cons_coef"])
+    functions.ColorAnalyticsElements(element_data["incons_coef"], project_data["cons_coef"])
+
+    output["store"]["dep_eval"] = json.dumps(element_data["dep_eval"], cls = functions.NpEncoder)
+    output["store"]["comp_eval"] = json.dumps(element_data["comp_eval"], cls = functions.NpEncoder)
+    output["store"]["incons_coef"] = json.dumps(element_data["incons_coef"], cls = functions.NpEncoder)
+    output["store"]["project_data_store"] = json.dumps(project_data, cls = functions.NpEncoder)
+
+    output["graph"]["dep_eval"] = element_data["dep_eval"]["elements"]
+    output["graph"]["comp_eval"] = element_data["comp_eval"]["elements"]
+    output["graph"]["incons_coef"] = element_data["incons_coef"]["elements"]
+
+    return output
 
 
 
@@ -464,7 +525,6 @@ def NavlinkClick(input):
             navlink_selected[key] = False
             page_display[key] = "none"
 
-
     output = {}
     output["navlink_selected"] = navlink_selected
     output["page_display"] = page_display
@@ -490,77 +550,79 @@ def RedirectToProject(clickdata):
         return "/project"
 
 
-@dash.callback(
-    Output({"type": "element_data_store", "index": MATCH}, "data", allow_duplicate = True),
-    Output({"type": "analytics_graph", "index": MATCH}, "elements", allow_duplicate = True),
-    Input({"type": "project_tree", "index": MATCH}, "selected"),
-    State("project_data_store", "data"),
-    prevent_initial_call = True
-)
-def TreeItemSelect(selected, project_data_store):
-    if selected:
-        selected = GetTreeSelectedItem(selected[0])
-        project_data = json.loads(project_data_store)
-
-        if ctx.triggered_id["index"] == "dep_eval":
-            elements = functions.GetHierarchyPreset(*functions.GetAnalyticsGraphDfs(project_data["id"], selected["id"]))
-        else:
-            group = bool(selected["type"] == "group")
-            elements = functions.GetHierarchyPreset(*functions.GetPriorityInfo(project_data, selected["id"], group))
-
-        element_data = {}
-        element_data["elements"] = elements
-        element_data["selected"] = None
-
-        return json.dumps(element_data, cls = functions.NpEncoder), elements
-    
-    else: raise PreventUpdate
-
 
 @dash.callback(
     output = {
         "element_data_store": Output({"type": "element_data_store", "index": "comp_eval"}, "data", allow_duplicate = True),
         "elements": Output({"type": "analytics_graph", "index": "comp_eval"}, "elements", allow_duplicate = True),
         "table_data": Output("comp_eval_table", "data"),
-        "container_display": Output("comp_eval_table_container", "display"),
+        "matrix_display": Output("matrix_container", "display"),
         "placeholder_display": Output("comp_eval_placeholder", "display"),
     },
     inputs = {
         "input": {
             "tapNodeData": Input({"type": "analytics_graph", "index": "comp_eval"}, "tapNodeData"),
+            "matrix_select_value": Input("matrix_select", "value"),
+            "tree_selected_item": Input({"type": "project_tree", "index": "comp_eval"}, "selected"),
             "element_data_store": State({"type": "element_data_store", "index": "comp_eval"}, "data"),
             "project_data_store": State("project_data_store", "data"),
-            "matrix_select_value": State("matrix_select", "value"),
-            "tree_selected_item": State({"type": "project_tree", "index": "comp_data"}, "selected"),
+            "table_data": State("comp_eval_table", "data"),
         }
     },
     prevent_initial_call = True
 )
-def SelectCompEvalGraphElement(input):
+def CompEvalGraphProcessing(input):
+    trigger = {"id": ctx.triggered_id, "property": ctx.triggered[0]["prop_id"].split(".")[-1], "value": ctx.triggered[0]["value"]}
+
     element_data = json.loads(input["element_data_store"])
     project_data = json.loads(input["project_data_store"])
+    tree_item = GetTreeSelectedItem(input["tree_selected_item"][0])
 
-    element_data["selected"] = functions.GetElementById(input["tapNodeData"]["id"], element_data["elements"])
-    functions.ColorAnalyticsElements(element_data)
-
-    tree_item = GetTreeSelectedItem(input["tree_selected_item"])
-
-    if tree_item["type"] == "group": compdata = functions.GetGroupCalculatedCompdata(element_data["selected"]["data"]["id"])
-    else: compdata = functions.GetCalculatedCompdata(element_data["selected"]["data"]["id"])
+    if trigger["property"] == "tapNodeData": 
+        element_data["selected"] = functions.GetElementById(input["tapNodeData"]["id"], element_data["elements"])
+    elif trigger["property"] == "selected":
+        group = bool(tree_item["type"] == "group")
+        element_data["elements"] = functions.GetHierarchyPreset(*functions.GetPriorityInfo(project_data, tree_item["id"], group))
     
-    if input["matrix_select_value"] == "comparison_matrix":
-        matrix = functions.MakeMatrix(compdata["weighted_data"], round = True)
-        local_priorities = functions.GetNodeLocalPriorities(matrix)
-        table_data = functions.MakeTableData(element_data["selected"]["data"]["name"], functions.GetUserNodesForSimpleGrid(element_data["selected"]["data"]["id"], project_data, element_data["elements"]), matrix, local_priorities)
-    else:
-        matrix = functions.MakeMatrix(compdata, property = "competence_data", round = True)
-        table_data = functions.MakeTableData(element_data["selected"]["data"]["name"], functions.GetUserNodesForSimpleGrid(element_data["selected"]["data"]["id"], project_data, element_data["elements"]), matrix)
+    table_body = input["table_data"]["body"]
+    if element_data["selected"]:
+        if tree_item["type"] == "group": compdata = functions.GetGroupCalculatedCompdata(element_data["selected"]["data"]["id"], tree_item["id"])
+        else: compdata = functions.GetCalculatedCompdata(element_data["selected"]["data"]["id"], tree_item["id"])
+
+        if input["matrix_select_value"] == "comparison_matrix":
+            matrix = functions.MakeMatrix(compdata)
+            local_priorities = functions.GetLocalPriorities(matrix)
+            table_body = functions.MakeTableData(element_data["selected"]["data"]["name"], functions.GetUserNodesForSimpleGrid(element_data["selected"]["data"]["id"], project_data, element_data["elements"]), matrix, local_priorities, round_values = True)
+        else:
+            matrix = functions.MakeMatrix(compdata, property = "competence_data", asymmetrical = False)
+            table_body = functions.MakeTableData(element_data["selected"]["data"]["name"], functions.GetUserNodesForSimpleGrid(element_data["selected"]["data"]["id"], project_data, element_data["elements"]), matrix, round_values = True)
+        input["table_data"] = {"body": table_body}
+
+    functions.ColorAnalyticsElements(element_data, project_data["cons_coef"])
 
     output = {}
     output["element_data_store"] = json.dumps(element_data, cls = functions.NpEncoder)
     output["elements"] = element_data["elements"]
-    output["table_data"] = table_data
-    output["container_display"] = "block"
-    output["placeholder_display"] = "none"
+    output["table_data"] = input["table_data"]
+    output["matrix_display"] = "block" if element_data["selected"] else "none"
+    output["placeholder_display"] = "none" if element_data["selected"] else "block"
 
     return output
+
+
+@dash.callback(
+    Output({"type": "element_data_store", "index": "dep_eval"}, "data"),
+    Output({"type": "analytics_graph", "index": "dep_eval"}, "elements", allow_duplicate = True),
+    Input({"type": "project_tree", "index": "dep_eval"}, "selected"),
+    State("project_data_store", "data"),
+    prevent_initial_call = True
+)
+def DepEvalGraphProcessing(selected, project_data_store):
+    project_data = json.loads(project_data_store)
+    tree_item = GetTreeSelectedItem(selected[0])
+
+    element_data = {}
+    element_data["elements"] = functions.GetHierarchyPreset(*functions.GetDepEvalGraphDfs(project_data["id"], tree_item["id"]))
+    element_data["selected"] = None
+
+    return json.dumps(element_data, cls = functions.NpEncoder), element_data["elements"]

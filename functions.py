@@ -1,5 +1,6 @@
 from PIL import ImageFont
 import dash_mantine_components as dmc
+from dash_iconify import DashIconify
 import pandas as pd
 import uuid
 import psycopg2
@@ -176,7 +177,8 @@ def GetProjectDfs(project_data, user_id = None):
 
     return nodes_df, edges_df
 
-def GetAnalyticsGraphDfs(project_id, user_id = None):
+#Получить датафреймы вершин и ребер из базы для графа аналитики
+def GetDepEvalGraphDfs(project_id, user_id = None):
     nodes_df = GetNodes(project_id)
 
     if user_id: edges_df = GetEdgedata(project_id, user_id)
@@ -251,7 +253,7 @@ def GetHierarchyPreset(nodes_df, edges_df):
                 if "priority" in row: 
                     node_data["priority"] = row["priority"]
                     node_data["cons_coef"] = row["cons_coef"]
-                    node_data["full_name"] = row["name"] + f"\n (Вес: {row['priority']}, ОС: {row['cons_coef']})"
+                    node_data["full_name"] = row["name"] + f"\n Вес: {row['priority']}\n ОС: {row['cons_coef']}"
 
                 node_position = {}
                 node_position["x"] = 0
@@ -313,6 +315,10 @@ def ColorElements(element_data):
             element["classes"] = "selected"
             continue
 
+        if element["data"]["id"] in element_data["state"]["cascade_selected"].keys(): 
+            element["classes"] = "selected"
+            continue
+
         if element["data"]["id"] in element_data["state"]["manually_deleted"].keys(): 
             element["classes"] = "manually_deleted"
             continue
@@ -335,17 +341,17 @@ def ColorAnalyticsElements(element_data, cons_coef = None):
             continue
 
         if cons_coef:
-            if cons_coef in element["data"]:
+            if "cons_coef" in element["data"]:
                 if element["data"]["cons_coef"] > cons_coef: 
                     element["classes"] = "bad"
                     continue
                 else:
                     element["classes"] = "good"
                     continue
-
-        if element["data"]["deleted"]: 
-            element["classes"] = "deleted"
-            continue
+        else:
+            if element["data"]["deleted"]: 
+                element["classes"] = "deleted"
+                continue
 
         element["classes"] = "default"
 
@@ -431,6 +437,14 @@ def GetHierarchyInfo(nodes_df):
 #Редактирование иерархии ---------------------------------------------------------------------------------------------------------------------------------------------------------------
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+
+def CascadeSelect(element_id, element_data):
+    nodes_df, edges_df = ElementsToDfs(element_data["elements"])
+    incoming_ids = list(edges_df.loc[edges_df["target"] == element_id]["id"])
+    outcoming_ids = list(edges_df.loc[edges_df["source"] == element_id]["id"])
+
+    element_data["state"]["cascade_selected"] = {}
+    for id in incoming_ids + outcoming_ids: element_data["state"]["cascade_selected"][id] = GetElementById(id, element_data["elements"])
 
 #Удалить ребро
 def DeleteEdge(nodes_df, edges_df, edge_id, element_data):
@@ -564,12 +578,18 @@ def CancelAddElement(added_element, element_data):
 
 #Отменить выбор элемента
 def DeselectElement(element_data):
-    if element_data["state"]["selected"]:
-        selected_element = GetElementById(element_data["state"]["selected"]["data"]["id"], element_data["elements"])
-        if selected_element["data"]["id"] in element_data["state"]["manually_deleted"].keys(): selected_element["classes"] = "manually_deleted"
-        elif selected_element["data"]["id"] in element_data["state"]["cascade_deleted"].keys(): selected_element["classes"] = "cascade_deleted"
+    def Deselect(element_id):
+        selected_element = GetElementById(element_id, element_data["elements"])
+        if element_id in element_data["state"]["manually_deleted"].keys(): selected_element["classes"] = "manually_deleted"
+        elif element_id in element_data["state"]["cascade_deleted"].keys(): selected_element["classes"] = "cascade_deleted"
         else: selected_element["classes"] = "default"
+
+    if element_data["state"]["selected"]:
+        Deselect(element_data["state"]["selected"]["data"]["id"])
         element_data["state"]["selected"] = None
+
+        for key in element_data["state"]["cascade_selected"].keys(): Deselect(key)
+        element_data["state"]["cascade_selected"] = {}
 
 #Создать объект "Вершина"
 def CreateNodeObject(parent_node):
@@ -804,7 +824,7 @@ def GetUserProjectsTableData(user_id):
     
     cursor.execute(query)
     res = pd.DataFrame(cursor.fetchall(), columns = ["id", "name", "status", "role"])
-    res["link"] = [dmc.Button(id = {"type": "project_button", "index": row["id"]}, children = "Перейти") for index, row in res.iterrows()]
+    res["link"] = [dmc.NavLink(id = {"type": "project_button", "index": row["id"]}, leftSection = DashIconify(icon = "mingcute:folder-open-line", width=25)) for index, row in res.iterrows()]
     res.drop(["id"], axis=1, inplace = True)
     res = res.to_dict("records")
 
@@ -880,9 +900,9 @@ def GetStatusByCode(status_code):
     return status
 
 #Заполнить БД данными о новом созданном проекте
-def InsertNewProject(user_id):
+def InsertNewProject(user_id, project_name):
     try:
-        query = """insert into tbl_projects (
+        query = f"""insert into tbl_projects (
             project_name, 
             status_id, 
             merge_coef, 
@@ -890,7 +910,7 @@ def InsertNewProject(user_id):
             incons_coef,
             const_comp) 
             select
-            'Новый проект' as project_name, 
+            '{project_name}' as project_name, 
             tbl_status.id as status_id,
             0.5 as merge_coef,
             0.1 as cons_coef,
@@ -1736,7 +1756,7 @@ def GetAnalyticsTreeData(project_id, use_groups):
     return [root]
 
 #Получить матрицу значений из Compdata
-def MakeMatrix(compdata, property = "weighted_data", asymmetrical = True, round = False):
+def MakeMatrix(compdata, property = "weighted_data", asymmetrical = True):
     matrix = []
 
     matrix_dim = (1 + int(pow(1 + 8 * len(compdata), 0.5))) // 2
@@ -1751,14 +1771,9 @@ def MakeMatrix(compdata, property = "weighted_data", asymmetrical = True, round 
     i = 0
     j = 1
     for item in compdata:
-        if round:
-            matrix[i][j] = round(item[property] / 1, 3)
-            if asymmetrical: matrix[j][i] = round(1 / item[property], 3)
-            else: matrix[j][i] = matrix[i][j]
-        else:
-            matrix[i][j] = item[property] / 1
-            if asymmetrical: matrix[j][i] = 1 / item[property]
-            else: matrix[j][i] = matrix[i][j]
+        matrix[i][j] = item[property] / 1
+        if asymmetrical: matrix[j][i] = 1 / item[property]
+        else: matrix[j][i] = matrix[i][j]
 
         j += 1
         if j == matrix_dim:
@@ -1768,7 +1783,7 @@ def MakeMatrix(compdata, property = "weighted_data", asymmetrical = True, round 
     return matrix
 
 #Сформировать таблицу по матрице значений
-def MakeTableData(source_name, target_names, matrix, local_priorities = None):
+def MakeTableData(source_name, target_names, matrix, local_priorities = False, round_values = False):
     matrix_dim = len(target_names)
     matrix.insert(0, [0] * matrix_dim)
 
@@ -1782,6 +1797,10 @@ def MakeTableData(source_name, target_names, matrix, local_priorities = None):
         matrix[i][0] = target_names[i - 1]
         if local_priorities: matrix[i].append(local_priorities[i - 1])
 
+    if round_values:
+        for i in range(1, len(matrix)):
+            for j in range(1, len(matrix[0])):
+                matrix[i][j] = round(matrix[i][j], 3)
 
     return matrix
 
@@ -1823,11 +1842,11 @@ def GetConsCoef(matrix, local_priorities):
 def GetPriorityInfo(project_data, prop_id = None, group = False):
     nodes_df, edges_df = GetProjectDfs(project_data)
 
-    nodes_df["priority"] = 0
-    nodes_df["cons_coef"] = 0
+    nodes_df["priority"] = 0.0
+    nodes_df["cons_coef"] = 0.0
 
-    edges_df["priority"] = 0
-    edges_df["local_priority"] = 0
+    edges_df["priority"] = 0.0
+    edges_df["local_priority"] = 0.0
 
     for level in range(1, nodes_df["level"].max()):
         level_df = nodes_df[nodes_df["level"] == level]
@@ -1939,6 +1958,7 @@ def GetElementData(project_data, user_id):
     state["cascade_deleted"] = {}
     state["added"] = {}
     state["selected"] = None
+    state["cascade_selected"] = {}
 
     steps = {}
     steps["history"] = []
@@ -2106,9 +2126,12 @@ def SaveCompEvalToBD(selected_data):
     return True
 
 
+
+
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 #Управление группами -------------------------------------------------------------------------------------------------------------------------------------------------------------------
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 
 #Проверить наличие группы с таким названием в проекте
 def CheckExistingGroups(group_name, project_id):
@@ -2199,3 +2222,4 @@ def DeleteUserFromAllProjectGroups(user_id, project_id):
     except: return False
 
     return True
+

@@ -30,45 +30,48 @@ def layout():
                 dcc.Store(id="project_data_store", storage_type='session', clear_data=True),
                 dcc.Store(id="element_data_store", storage_type='session', clear_data=True),
                 dcc.Store(id="comp_data_store", storage_type='session', clear_data=True),
+                dcc.Interval(id={'type': 'load_interval', 'index': 'projects'}, n_intervals=0, max_intervals=1, interval=1), # max_intervals=0 - запустится 1 раз
+                dmc.Modal(
+                    title="Создание нового проекта",
+                    id="dialog_create_project",
+                    children=[
+                        #dmc.Space(h=10),
+                        dmc.TextInput(debounce=500, id = {"page": "projects", "name":"project_name_text"}, label = "Наименование"),
+                        dmc.Space(h=20),
+                        dmc.Group(
+                            [
+                                dmc.Button(id="dialog_create_project_button", children="Создать проект"),
+                            ],
+                            justify="flex-end",
+                        ),
+                    ],
+                ),
                 dmc.AppShellHeader(
                     children = [
-                        dmc.Box(children=[
-                            dmc.Center(dmc.Text(children="Список проектов", size='lg')),
-                            dmc.Group(children=[
-                            dmc.Center(dmc.Text(functions.GetShortUsername(current_user.userdata["name"]))),
-                            dmc.Flex(children=[dmc.NavLink(
-                                id = {"type": "logout_button", "index": "projects"},
-                                label = "",
-                                leftSection = DashIconify(icon = "mingcute:exit-fill"),
-                                c='red'
-                                )]),
-                            ]),
-                        ],
-                        px = "md",
-                        style = {"display":"flex", "justify-content":"space-between"}
+                        dmc.Box(
+                            children=[
+                                dmc.Flex(children=dmc.NavLink(id = "create_project_dialog", label = "Создать проект", leftSection = DashIconify(icon = "mingcute:file-new-line"))),
+                                dmc.Box(dmc.Text(children="Список проектов", size='lg')),
+                                dmc.Group(
+                                    children=[
+                                        dmc.Center(dmc.Text(functions.GetShortUsername(current_user.userdata["name"]))),
+                                        dmc.Flex(children=dmc.NavLink(id = {"type": "logout_button", "index": "projects"}, leftSection = DashIconify(icon = "mingcute:exit-fill"), c='red')),
+                                    ]
+                                ),
+                            ],
+                            style = {"display":"flex", "justify-content":"space-between", "align-items":"center"},
                         )
-                    ]
+                    ], withBorder=True
                 ),
                 dmc.AppShellMain(
                     children = [
-                        dmc.Stack(
-                            children = [
-                                dmc.Box(
-                                    children = [
-                                        dmc.Text("Список проектов", fz = 24, fw = 500),
-                                        dmc.Button("Создать", id = "create_project")
-                                    ],
-                                    style = {"display":"flex", "justify-content":"space-between"}
-                                ),
-                                dmc.Table(
-                                    id = "project_table", 
-                                    children = functions.CreateTableContent(["Название", "Этап", "Роль в проекте", "Ссылка"], functions.GetUserProjectsTableData(current_user.userdata["id"])),
-                                    highlightOnHover = True,
-                                    withTableBorder = True
+                        #dmc.Stack(
+                        #    children = [
+                                dmc.Table(id = "projects_table", children = [], highlightOnHover = True, withTableBorder = True, withColumnBorders=True
                                 )
-                            ],
-                            gap = "xs"
-                        )
+                     #       ],
+                        #    gap = "xs"
+                        #)
                     ],
                     mt = "sm",
                     px = "md"
@@ -79,6 +82,88 @@ def layout():
     
         layout = dmc.MantineProvider(layout)
         return layout
+
+
+
+def GetTableProjects(user_id):
+    head = dmc.TableThead(
+                children=[
+                    dmc.TableTr(
+                        children=[
+                            dmc.TableTh("Наименование"),
+                            dmc.TableTh("Этап", w=250),
+                            dmc.TableTh("Роль в проекте",w=150),
+                            dmc.TableTh(children="Открыть", w=80),
+                        ]
+                    ),
+                ],
+                bg="var(--mantine-color-gray-2)",
+            )
+    '''    
+    body = dmc.TableTbody(
+                children=[
+                    dmc.TableTr(
+                        children=[
+                            dmc.TableTh("Проект1"),
+                            dmc.TableTh("Этап1"),
+                            dmc.TableTh("Владелец1"),
+                            dmc.TableTh(dmc.NavLink(id = "zzz2", leftSection = DashIconify(icon = "mingcute:folder-open-line", width=30))),
+                        ]
+                    ),
+                    dmc.TableTr(
+                        children=[
+                            dmc.TableTh("Проект2"),
+                            dmc.TableTh("Этап2"),
+                            dmc.TableTh("Владелец2"),
+                            dmc.TableTh(dmc.NavLink(id = "zzz2", leftSection = DashIconify(icon = "mingcute:folder-open-line", width=30))),
+                        ]
+                    ),
+                    dmc.TableTr(
+                        children=[
+                            dmc.TableTh("Проект3"),
+                            dmc.TableTh("Этап3"),
+                            dmc.TableTh("Владелец3"),
+                            dmc.TableTh(dmc.NavLink(id = "zzz3", leftSection = DashIconify(icon = "mingcute:folder-open-line", width=30))),
+                        ]
+                    ),
+                ]
+            )
+        '''
+        
+    table_data = functions.GetUserProjectsTableData(current_user.userdata["id"])
+    body = dmc.TableTbody([dmc.TableTr([dmc.TableTd(element[key]) for key in element.keys()]) for element in table_data])
+
+    return [head, body]
+
+
+
+#Однократный запуск при обновлении страницы
+@dash.callback(
+    output = {
+        "redirect": Output({"type": "redirect", "index": "projects"}, "pathname", allow_duplicate = True),
+        "projects_table": Output("projects_table", "children", allow_duplicate = True),
+    },
+    inputs = {
+        "input": {
+            "n_intervals": Input(component_id={'type': 'load_interval', 'index': 'projects'}, component_property="n_intervals"),
+        }
+    },
+    prevent_initial_call = True
+)
+def update_store(input):
+    output = {}
+    output["redirect"] = "/projects"
+    output["projects_table"] = []
+
+    if 1==0:
+        output["redirect"] = "/projects"
+        return output
+
+    #output["projects_table"] = functions.CreateTableContent(["Название", "Этап", "Роль в проекте", "Перейти к проекту"], functions.GetUserProjectsTableData(current_user.userdata["id"]))
+    output["projects_table"] = GetTableProjects(current_user.userdata["id"])
+
+
+    return output
 
 
 @dash.callback(
@@ -108,15 +193,30 @@ def ProjectChoice(clickdata):
 
     return "/project"
 
+@dash.callback(
+    Output("dialog_create_project", "opened", allow_duplicate = True),
+    Input("create_project_dialog", "n_clicks"),
+    #State("dialog_create_project", "opened"),
+    prevent_initial_call=True,
+)
+def modal_demo(clickdata):
+    if not clickdata: raise PreventUpdate
+    return True
+
 
 @dash.callback(
-    Output("project_table", "children"),
-    Input("create_project", "n_clicks"),
+    Output("projects_table", "children", allow_duplicate = True),
+    Output("dialog_create_project", "opened", allow_duplicate = True),
+    Input("dialog_create_project_button", "n_clicks"),
+    State({"page": "projects", "name":"project_name_text"},"value"),
     prevent_initial_call = True
 )
-def CreateProject(clickdata):
-    if functions.InsertNewProject(current_user.userdata["id"]):
-        table_data = functions.CreateTableContent(["Название", "Этап", "Роль в проекте", "Перейти к проекту"], functions.GetUserProjectsTableData(current_user.userdata["id"]))
-        return table_data
-    
-    raise PreventUpdate
+def CreateProject(clickdata, project_name):
+    if not clickdata: raise PreventUpdate
+    if not project_name: raise PreventUpdate
+    if len(project_name.strip())<=3: raise PreventUpdate
+    if not functions.InsertNewProject(current_user.userdata["id"], project_name): raise PreventUpdate
+        
+    table_data = functions.CreateTableContent(["Название", "Этап", "Роль в проекте", "Перейти к проекту"], functions.GetUserProjectsTableData(current_user.userdata["id"]))
+    return table_data, False
+

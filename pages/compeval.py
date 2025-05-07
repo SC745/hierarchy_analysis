@@ -17,6 +17,8 @@ dash.register_page(__name__)
 #Построить таблицу сравнительной оценки
 def GetSimpleGrid(comp_data):
     superiority_data = comp_data["data"]
+    if len(superiority_data) == 0: return []
+
     source_node_name = superiority_data[0]["source_node_name"]
     targret_node_names = comp_data["node_names"]
     
@@ -142,28 +144,20 @@ def layout():
                 dcc.Interval(id={'type': 'load_interval', 'index': 'compeval'}, n_intervals=0, max_intervals=1, interval=1), # max_intervals=0 - запустится 1 раз
                 dmc.AppShellHeader(
                     children = [
-                        dmc.Box(
+                        dmc.Flex(
                             children = [
-                                dmc.Flex(children=[dmc.NavLink(
-                                    id = "compeval_to_project",
-                                    label = "Вернуться к проекту",
-                                    leftSection = DashIconify(icon = "mingcute:arrow-left-line"),
-                                    )]),
+                                dmc.Flex(children=dmc.NavLink(id = "compeval_to_project", label = "Вернуться к проекту", leftSection = DashIconify(icon = "mingcute:arrow-left-line"))),
                                 dmc.Center(dmc.Text(project_name_header_text, size='lg')),
-                                dmc.Group(children=[
-                                dmc.Center(dmc.Text(functions.GetShortUsername(current_user.userdata["name"]))),
-                                dmc.Flex(children=[dmc.NavLink(
-                                    id = {"type": "logout_button", "index": "compeval"},
-                                    label = "",
-                                    leftSection = DashIconify(icon = "mingcute:exit-fill"),
-                                    c='red'
-                                    )]),
-                                ]),
+                                dmc.Group(
+                                    children=[
+                                        dmc.Center(dmc.Text(functions.GetShortUsername(current_user.userdata["name"]))),
+                                        dmc.Flex(children=dmc.NavLink(id = {"type": "logout_button", "index": "compeval"}, leftSection = DashIconify(icon = "mingcute:exit-fill"), c='red')),
+                                    ]
+                                ),
                             ],
-                            px = "md",
                             style = {"display":"flex", "justify-content":"space-between"}
                         )
-                    ], withBorder=False
+                    ], withBorder=True
                 ),
                 dmc.AppShellMain(children=[
                     dmc.Container(id="comp_simple_grid", children=[], size='90%'),
@@ -179,6 +173,7 @@ def layout():
 #Однократный запуск при обновлении страницы
 @dash.callback(
     output = {
+        "redirect": Output({"type": "redirect", "index": "compeval"}, "pathname", allow_duplicate = True),
         "comp_data_store": Output("comp_data_store", 'data', allow_duplicate = True),
         "comp_simple_grid": Output("comp_simple_grid", "children", allow_duplicate = True),
         "target_node1_text": Output("target_node1_text", "children", allow_duplicate = True),
@@ -199,6 +194,15 @@ def update_store(input):
     source_node_id = page_compeval["current_node_id"]
     source_node_name = page_compeval["current_node_name"]
 
+    output = {}
+    output["target_node1_text"] = ""
+    output["target_node2_text"] = ""
+    output["superiority_slider_value"] = 1
+    output["comp_superior_set_display"] = 'none'
+    output["comp_data_store"] = ""
+    output["comp_simple_grid"] = []
+    output["redirect"] = "/compeval"
+
     comp_data = {}
     comp_data["source_node_name"]=source_node_name
     comp_data["cursor"]=0
@@ -209,33 +213,27 @@ def update_store(input):
     comp_data["node_names"] = node_names
     comp_data["table_id"]=None
 
-    selected_table_id = comp_data["data"][0]["table_id"]
+    if 1==0:
+        page_project = {}
+        page_project["project_id"] = page_compeval["project_id"]
+        session["page_project"] = json.dumps(page_project, cls = functions.NpEncoder)
+        output["redirect"] = "/project"
+        return output
+
     selected_data = None
-    for data_ in comp_data["data"]:
-        if data_["table_id"] == selected_table_id:
-            selected_data = data_
-            break
+    if len(comp_data["data"]) !=0:
+        selected_table_id = comp_data["data"][0]["table_id"]
+        for data_ in comp_data["data"]:
+            if data_["table_id"] == selected_table_id:
+                selected_data = data_
+                break
     
-    output = {}
-    
-    if not selected_data:
-        comp_superior_set_display = "none"
-        output["target_node1_text"] = ""
-        output["target_node2_text"] = ""
-        #output["superiority_radiogroup_value"] = "1"
-        #output["superiority_radio1_text"] = ""
-        #output["superiority_radio2_text"] = ""
-        output["superiority_slider_value"] = 1
-        output["comp_superior_set_display"] = 'none'
-    else:
+    if selected_data:
         comp_data["table_id"] = selected_table_id
         output["comp_superior_set_display"] = 'block'
         calc_outputs = GetOutputs(selected_data)
         output["target_node1_text"] = calc_outputs["target_node1_text"]
         output["target_node2_text"] = calc_outputs["target_node2_text"]
-        #output["superiority_radiogroup_value"] = calc_outputs["superiority_radiogroup_value"]
-        #output["superiority_radio1_text"] = calc_outputs["superiority_radio1_text"]
-        #output["superiority_radio2_text"] = calc_outputs["superiority_radio2_text"]
         output["superiority_slider_value"] = calc_outputs["superiority_slider_value"]
 
 
@@ -244,7 +242,6 @@ def update_store(input):
     output["comp_data_store"] = json.dumps(comp_data, cls = functions.NpEncoder)
     output["comp_simple_grid"] = dmc_SimpleGrid
     
-
     return output
 
 
@@ -274,6 +271,7 @@ def RedirectToProject(clickdata):
         page_compeval = json.loads(session["page_compeval"])
         page_project = {}
         page_project["project_id"] = page_compeval["project_id"]
+        page_project["current_node_id"] = page_compeval["current_node_id"]
         session["page_project"] = json.dumps(page_project, cls = functions.NpEncoder)
     
         return "/project"
@@ -429,3 +427,4 @@ def SuperioritySlider(input):
     output["superiority_text"] = superiority_text
 
     return output
+
