@@ -10,7 +10,7 @@ from flask_login import UserMixin
 
 #Соединение с БД
 #connection = psycopg2.connect(host='localhost', database='hierarchy', user='postgres', password='228228', port = 5432)
-connection = psycopg2.connect(host='192.168.1.102', database='hierarchy', user='postgres', password='228228', port = 5432)
+connection = psycopg2.connect(host='localhost', database='hierarchy', user='postgres', password='228228', port = 5432)
 cursor = connection.cursor()
 
 #Класс пользователя для аутентификации
@@ -1296,8 +1296,8 @@ def GetCalculatedCompdata(source_node_id, user_id = None):
         (select 
         n1.id as t1_id, 
         n2.id as t2_id, 
-        sqrt(exp(sum(ln(ed1.competence)) / count(ed1.competence)) * exp(sum(ln(ed2.competence)) / count(ed2.competence))) as competence_data,
-        exp(sum(ln(case when superior = true then superiority_code ^ sqrt(ed1.competence * ed2.competence)	when superior = false then 1 / (superiority_code ^ sqrt(ed1.competence * ed2.competence)) end)) /count(n1.id)) as weighted_data
+        sum((ed1.competence + ed2.competence) / 2) / count(n1.id) as competence_data,
+        exp(sum(ln(case when superior = true then superiority_code ^ ((ed1.competence + ed2.competence) / 2) when superior = false then 1 / (superiority_code ^ ((ed1.competence + ed2.competence) / 2)) end)) / sum((ed1.competence + ed2.competence) / 2)) as weighted_data
         from tbl_compdata
         inner join tbl_superiority on tbl_superiority.id = tbl_compdata.superiority_id
         inner join tbl_edgedata ed1 on ed1.id = tbl_compdata.edgedata1_id
@@ -1334,8 +1334,8 @@ def GetGroupCalculatedCompdata(source_node_id, group_id):
         (select 
         t1_id as t1_id, 
         t2_id as t2_id, 
-        sqrt(exp(sum(ln(ed1_competence)) / count(ed1_competence)) * exp(sum(ln(ed2_competence)) / count(ed2_competence))) as competence_data,
-        exp(sum(ln(case when superior = true then superiority_code ^ sqrt(ed1_competence * ed2_competence)	when superior = false then 1 / (superiority_code ^ sqrt(ed1_competence * ed2_competence)) end)) /count(t1_id)) as weighted_data
+        sum((ed1_competence + ed2_competence) / 2) / count(ed2_competence) as competence_data,
+        exp(sum(ln(case when superior = true then superiority_code ^ ((ed1_competence + ed2_competence) / 2) when superior = false then 1 / (superiority_code ^ ((ed1_competence + ed2_competence) / 2)) end)) / sum((ed1_competence + ed2_competence) / 2)) as weighted_data
         from 
         (select 
         n1.id as t1_id, 
