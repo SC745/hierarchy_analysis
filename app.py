@@ -1,7 +1,7 @@
 import dash
 import dash_mantine_components as dmc
 from dash import _dash_renderer
-import functions
+import models
 
 import os
 from flask import Flask
@@ -32,7 +32,7 @@ login_manager.login_view = "/login"
 
 @login_manager.user_loader
 def load_user(username):
-    return functions.User(username)
+    return models.User(username)
 
 
 if __name__ == '__main__':

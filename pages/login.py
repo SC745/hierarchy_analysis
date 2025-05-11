@@ -1,10 +1,11 @@
 import dash
 import dash_mantine_components as dmc
-import functions
 from dash.exceptions import PreventUpdate
 from dash import _dash_renderer, dcc, Output, Input, State
 from flask_login import current_user, UserMixin, login_user
 from flask import session
+import functions
+import models
 
 
 _dash_renderer._set_react_version("18.2.0")
@@ -74,7 +75,7 @@ def Login(input):
 
     output = {}
     if successful_login:
-        login_user(functions.User(input["login"]))
+        login_user(models.User(input["login"]))
         output["redirect_trigger"] = "/projects"
         output["error_state"] = "none"
     else:

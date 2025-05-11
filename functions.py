@@ -6,18 +6,23 @@ import uuid
 import psycopg2
 import numpy as np
 import json
-from flask_login import UserMixin
+from werkzeug.security import generate_password_hash,  check_password_hash
 
 #Соединение с БД
+
+DB_SERVER = "192.168.1.122"
+DB_PORT = 5432
+DB_DATABASE = "hierarchy"
+DB_USERNAME = "postgres"
+DB_PASSWORD = "postgres"
+
 #connection = psycopg2.connect(host='localhost', database='hierarchy', user='postgres', password='228228', port = 5432)
-connection = psycopg2.connect(host='localhost', database='hierarchy', user='postgres', password='228228', port = 5432)
+#connection = psycopg2.connect(host='192.168.1.102', database='hierarchy', user='postgres', password='228228', port = 5432)
+#connection = psycopg2.connect(host='192.168.1.122', database='hierarchy', user='postgres', password='postgres', port = 5432)
+connection = psycopg2.connect(host=DB_SERVER, port = DB_PORT, database=DB_DATABASE, user=DB_USERNAME, password=DB_PASSWORD)
+
 cursor = connection.cursor()
 
-#Класс пользователя для аутентификации
-class User(UserMixin):
-    def __init__(self, username):
-        self.id = username
-        self.userdata = GetUserData(username)
 
 #Кодировка для json
 class NpEncoder(json.JSONEncoder):
@@ -61,7 +66,51 @@ cons_coef_data = {
 }
 
 
+#----------------------------------------------------------------------------------------------------
+# Формирование глобальных данных
+#----------------------------------------------------------------------------------------------------
 
+#Получить содержимое таблицы ролей
+def GetRolesCodeDict():
+    query = f"select role_code code, role_name name, access_level, id role_id from tbl_roles"
+    try:
+        conn = psycopg2.connect(host=DB_SERVER, port = DB_PORT, database=DB_DATABASE, user=DB_USERNAME, password=DB_PASSWORD)
+        cur = conn.cursor()
+        cur.execute(query)
+        res = cur.fetchall()
+        columns = [desc[0] for desc in cur.description]
+        result = {}
+        for row in res:
+            rd = dict(zip(columns, row))
+            result[rd["code"]] = rd
+    except:
+        result = {}
+    finally:
+        if conn:
+            cur.close()
+            conn.close()
+    return result
+
+#Получить содержимое таблицы ролей
+def GetStatusStageDict():
+    query = f"select id, status_name name, status_code code, status_stage stage from tbl_status"
+    try:
+        conn = psycopg2.connect(host=DB_SERVER, port = DB_PORT, database=DB_DATABASE, user=DB_USERNAME, password=DB_PASSWORD)
+        cur = conn.cursor()
+        cur.execute(query)
+        res = cur.fetchall()
+        columns = [desc[0] for desc in cur.description]
+        result = {}
+        for row in res:
+            rd = dict(zip(columns, row))
+            result[rd["stage"]] = rd
+    except:
+        result = {}
+    finally:
+        if conn:
+            cur.close()
+            conn.close()
+    return result
 
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 #Получение данных для построения иерархии ----------------------------------------------------------------------------------------------------------------------------------------------
@@ -302,8 +351,8 @@ def RefreshNodePositionsSizes(elements):
         if "source" not in element["data"]:
             element["data"]["width"] = nodebox_df.iloc[element["data"]["level"] - 1]["node_width"]
             element["data"]["height"] = nodebox_df.iloc[element["data"]["level"] - 1]["node_height"]
-            element["position"]["x"] = (nodebox_df["level_width"].max() - nodebox_df.iloc[element["data"]["level"] - 1]["level_width"] + element["data"]["width"] + 2 * nodebox_props["margin-x"]) / 2 + (element["data"]["width"] + 2 * nodebox_props["margin-x"]) * element_counter[element["data"]["level"]] + 600
-            element["position"]["y"] = nodebox_df[:element["data"]["level"] - 1]["node_height"].sum() + element["data"]["height"] / 2 + nodebox_props["margin-y"] * 2 * (element["data"]["level"] - 1) + 30
+            element["position"]["x"] = (nodebox_df["level_width"].max() - nodebox_df.iloc[element["data"]["level"] - 1]["level_width"] + element["data"]["width"] + 2 * nodebox_props["margin-x"]) / 2 + (element["data"]["width"] + 2 * nodebox_props["margin-x"]) * element_counter[element["data"]["level"]] #+ 600
+            element["position"]["y"] = nodebox_df[:element["data"]["level"] - 1]["node_height"].sum() + element["data"]["height"] / 2 + nodebox_props["margin-y"] * 2 * (element["data"]["level"] - 1) #+ 30
             element_counter[element["data"]["level"]] += 1
 
     return elements
@@ -312,10 +361,6 @@ def RefreshNodePositionsSizes(elements):
 def ColorElements(element_data):
     for element in element_data["elements"]:
         if element_data["state"]["selected"] and element_data["state"]["selected"]["data"]["id"] == element["data"]["id"]: 
-            element["classes"] = "selected"
-            continue
-
-        if element["data"]["id"] in element_data["state"]["cascade_selected"].keys(): 
             element["classes"] = "selected"
             continue
 
@@ -330,7 +375,11 @@ def ColorElements(element_data):
         if element["data"]["id"] in element_data["state"]["added"].keys(): 
             element["classes"] = "added"
             continue
-        
+
+        if element["data"]["id"] in element_data["state"]["cascade_selected"].keys(): 
+            element["classes"] = "selected"
+            continue
+
         element["classes"] = "default"
 
 #Покрасить элементы
@@ -807,7 +856,7 @@ def GetUserData(login):
 
     return user_data
 
-#Получить список проектов пользователя
+#Получить строки таблицы проектов пользователя
 def GetUserProjectsTableData(user_id):
     query = f"""select
         tbl_projects.id,
@@ -830,7 +879,7 @@ def GetUserProjectsTableData(user_id):
 
     return res
 
-#Получить список проектов пользователя
+#Получить данные проекта пользователя
 def GetProjectData(user_id, project_id):
     query = f"""select
         tbl_projects.id,
@@ -981,7 +1030,18 @@ def GetTaskTableData(project_id):
 def GetUserTableData(project_id, access_level):
     table_data = GetProjectUserdata(project_id)
 
-    table_data["delete"] = [dmc.Button(id = {"type": "delete_button", "index": row["id"]}, children = "Удалить", color = "red", disabled = bool(row["access_level"] >= access_level)) for index, row in table_data.iterrows()]
+    table_data["edit"] = [
+        dmc.NavLink(id = {"type": "user_edit_button", "index": row["id"]}, leftSection = DashIconify(icon = "mingcute:edit-2-line", width=25)) if row["access_level"] != 4
+        else  dmc.NavLink(leftSection = DashIconify(icon = "mingcute:edit-2-line", width=25), disabled=True)
+        for index, row in table_data.iterrows()
+    ]
+
+    #table_data["delete"] = [dmc.Button(id = {"type": "delete_button", "index": row["id"]}, children = "Удалить", color = "red", disabled = bool(row["access_level"] >= access_level)) for index, row in table_data.iterrows()]
+    table_data["delete"] = [
+        dmc.NavLink(id = {"type": "user_delete_button", "index": row["id"]}, leftSection = DashIconify(icon = "mingcute:delete-2-line", width=25)) if row["access_level"] != 4
+        else  dmc.NavLink(leftSection = DashIconify(icon = "mingcute:delete-2-line", width=25), disabled=True)
+        for index, row in table_data.iterrows()
+    ]
 
     table_data.drop(["de_completed", "ce_completed", "access_level", "login", "id"], axis = 1, inplace = True)
     table_data = table_data.to_dict("records")
@@ -990,11 +1050,19 @@ def GetUserTableData(project_id, access_level):
 
 #Получить содержимое таблицы групп из раздела "Управление группами"
 def GetGroupListTableData(project_id):
-    query = f"select id, group_name from tbl_groups where project_id = {project_id}"
+    query = f"select id, group_name from tbl_groups where project_id = {project_id} order by group_name"
 
     cursor.execute(query)
     table_data = pd.DataFrame(cursor.fetchall(), columns = ["id", "name"])
-    table_data["delete"] = [dmc.Button(id = {"type": "group_delete_button", "index": row["id"]}, children = "Удалить", color = "red") for index, row in table_data.iterrows()]
+    
+    #table_data["edit"] = [dmc.Button(id = {"type": "group_edit_button", "index": row["id"]}, children = "Изменить", color = "green") for index, row in table_data.iterrows()]
+    #table_data["edit"] = [dmc.Button(id = {"type": "group_edit_button", "index": row["id"]}, leftSection = DashIconify(icon = "mingcute:edit-2-line", width=25)) for index, row in table_data.iterrows()]
+    table_data["edit"] = [dmc.NavLink(id = {"type": "group_edit_button", "index": row["id"]}, leftSection = DashIconify(icon = "mingcute:edit-2-line", width=25)) for index, row in table_data.iterrows()]
+
+    #table_data["delete"] = [dmc.Button(id = {"type": "group_delete_button", "index": row["id"]}, children = "Удалить", color = "red") for index, row in table_data.iterrows()]
+    #table_data["delete"] = [dmc.Button(id = {"type": "group_delete_button", "index": row["id"]}, leftSection = DashIconify(icon = "mingcute:delete-2-line", width=25)) for index, row in table_data.iterrows()]
+    table_data["delete"] = [dmc.NavLink(id = {"type": "group_delete_button", "index": row["id"]}, leftSection = DashIconify(icon = "mingcute:delete-2-line", width=25)) for index, row in table_data.iterrows()]
+
     table_data.drop(["id"], axis = 1, inplace = True)
 
     table_data = table_data.to_dict("records")
@@ -1006,11 +1074,12 @@ def GetGroupUsersTableData(group_id):
     query = f"""select tbl_groupdata.id, tbl_users.user_name
         from tbl_users
         inner join tbl_groupdata on tbl_users.id = tbl_groupdata.user_id
-        where tbl_groupdata.group_id = {group_id}"""
+        where tbl_groupdata.group_id = {group_id} order by tbl_users.user_name"""
 
     cursor.execute(query)
     table_data = pd.DataFrame(cursor.fetchall(), columns = ["id", "name"])
-    table_data["delete"] = [dmc.Button(id = {"type": "groupdata_button", "index": row["id"]}, children = "Удалить", color = "red") for index, row in table_data.iterrows()]
+    #table_data["delete"] = [dmc.Button(id = {"type": "groupdata_button", "index": row["id"]}, children = "Удалить", color = "red") for index, row in table_data.iterrows()]
+    table_data["delete"] = [dmc.NavLink(id = {"type": "groupdata_button", "index": row["id"]}, leftSection = DashIconify(icon = "mingcute:delete-2-line", width=25)) for index, row in table_data.iterrows()]
     table_data.drop(["id"], axis = 1, inplace = True)
 
     table_data = table_data.to_dict("records")
@@ -1078,14 +1147,54 @@ def DeleteProject(project_id):
 
 #Получить роль пользователя в проекте
 def GetUserRole(userdata_id):
-    query = f"""select role_code, access_level from tbl_userdata
-        inner join tbl_roles on tbl_roles.id = tbl_userdata.role_id
-        where tbl_userdata.id = {userdata_id}"""
-    cursor.execute(query)
 
-    role_data = pd.DataFrame(cursor.fetchall(), columns = ["role_code", "access_level"])
-    if len(role_data): return role_data.to_dict("records")[0]
-    else: return False
+    query = f"""select ud.id, ud.project_id, ud.de_completed, ud.ce_completed, ud.competence,
+    ud.user_id,u.user_name, u.login,  
+    ud.role_id, r.role_code, r.access_level, r.role_name  
+    from tbl_userdata ud
+    inner join tbl_users u on u.id = ud.user_id
+    inner join tbl_roles r on r.id = ud.role_id
+    where ud.id = {userdata_id}"""
+    #columns = ("id", "group_name", "project_id")
+    try:
+        conn = psycopg2.connect(host=DB_SERVER, port = DB_PORT, database=DB_DATABASE, user=DB_USERNAME, password=DB_PASSWORD)
+        cur = conn.cursor()
+        cur.execute(query)
+        columns = [desc[0] for desc in cur.description]
+        res = cur.fetchone()
+        result = dict(zip(columns, res))
+        cur.close()
+        conn.close()
+        return result
+    except: 
+        return False
+
+
+#Получить роль пользователя в проекте
+def GetUserInProjectData(user_id, project_id):
+
+    query = f"""select ud.id, ud.project_id, ud.de_completed, ud.ce_completed, ud.competence,
+    ud.user_id,u.user_name, u.login,  
+    ud.role_id, r.role_code, r.access_level, r.role_name  
+    from tbl_userdata ud
+    inner join tbl_users u on u.id = ud.user_id
+    inner join tbl_roles r on r.id = ud.role_id
+    where ud.project_id = {project_id} and ud.user_id = {user_id}"""
+    try:
+        conn = psycopg2.connect(host=DB_SERVER, port = DB_PORT, database=DB_DATABASE, user=DB_USERNAME, password=DB_PASSWORD)
+        cur = conn.cursor()
+        cur.execute(query)
+        columns = [desc[0] for desc in cur.description]
+        res = cur.fetchone()
+        result = dict(zip(columns, res))
+        cur.close()
+        conn.close()
+        return result
+    except: 
+        return False
+
+
+
 
 #Сформировать набор данных для сравнительной оценки и записать в базу
 def CreateAndInsertCompdata(nodes_df, edges_df, edgedata):
@@ -1168,16 +1277,52 @@ def UpdateUserRole(userdata_id, role_code):
 
     return True
 
+
 #Удалить пользователя из проекта
-def DeleteUserdata(userdata_id):
-    query = f"delete from tbl_userdata where tbl_userdata.id = {userdata_id}"
+def DeleteUserData(userdata_id):
+    result = False
+    try:
+        conn = psycopg2.connect(host=DB_SERVER, port = DB_PORT, database=DB_DATABASE, user=DB_USERNAME, password=DB_PASSWORD)
+        conn.autocommit=False
+        cur = conn.cursor()
 
-    try: 
-        cursor.execute(query)
-        connection.commit()
-    except: return False
+        query = f"""delete from tbl_edgedata 
+        using tbl_edges, tbl_userdata where 
+        tbl_edges.id = tbl_edgedata.edge_id
+        and tbl_edges.project_id = tbl_userdata.project_id
+        and tbl_userdata.user_id = tbl_edgedata.user_id
+        and tbl_userdata.id = {userdata_id}"""
+        cur.execute(query)
 
-    return True
+        query = f"""delete from tbl_compdata 
+        using tbl_edgedata, tbl_userdata, tbl_edges where 
+        (tbl_edgedata.id = tbl_compdata.edgedata1_id or tbl_edgedata.id = tbl_compdata.edgedata2_id)
+        and tbl_edges.id = tbl_edgedata.edge_id
+        and tbl_edges.project_id = tbl_userdata.project_id
+        and tbl_edgedata.user_id = tbl_userdata.user_id
+        and tbl_userdata.id = {userdata_id}"""
+        cur.execute(query)
+
+        query = f"""delete from tbl_groupdata gd
+        using tbl_groups g, tbl_userdata ud
+        where gd.group_id = g.id and ud.user_id = gd.user_id and ud.project_id = g.Project_id
+        and ud.id = {userdata_id}"""
+        cur.execute(query)
+
+        query = f"""delete from tbl_userdata where tbl_userdata.id = {userdata_id}"""
+        cur.execute(query)
+
+        conn.commit()
+        result = True
+    except: 
+        conn.rollback()
+        result = False
+    finally:
+        if conn:
+            cur.close()
+            conn.close()
+
+    return result
 
 #Удалить данные оценки зависимостей для выбранного эксперта по проекту
 def DeleteUserEdgedata(userdata_id):
@@ -1391,7 +1536,7 @@ def GetGroupCalculatedCompdata(source_node_id, group_id):
 #Получение компетентности в различных разрезах
 
 #Получить компетентность по исходящим ребрам для пользователя
-def GetUserEdgeCompetenceData(source_id, user_id):
+def GetUserEdgeCompetenceData(source_id, user_id, stage = None):
     query = f"""select
         target_table.node_name as target_name,
         competence,
@@ -1408,12 +1553,12 @@ def GetUserEdgeCompetenceData(source_id, user_id):
     
     cursor.execute(query)
     competence_data = pd.DataFrame(cursor.fetchall(), columns = ["name", "competence", "table_id"])
-    competence_data = CreateCompetenceData(competence_data, "edge_competence")
+    competence_data = CreateCompetenceData(competence_data, "edge_competence", stage)
 
     return competence_data
 
 #Получить компетентность по исходящим ребрам для групп пользователей
-def GetGroupEdgeCompetenceData(source_id, group_id):
+def GetGroupEdgeCompetenceData(source_id, group_id, stage = None):
     query = f"""select 
         tbl_nodes.node_name, 
         case when count(distinct tbl_edgedata.competence) = 1 then max(tbl_edgedata.competence) else -1 end competence, 
@@ -1424,32 +1569,32 @@ def GetGroupEdgeCompetenceData(source_id, group_id):
         left outer join tbl_edgedata on tbl_edgedata.edge_id = tbl_edges.id
         inner join tbl_groupdata on tbl_groupdata.user_id = tbl_edgedata.user_id
         where source_id = {source_id} and tbl_groupdata.group_id = {group_id}
-        group by tbl_edges.id, tbl_nodes.node_name
+        group by tbl_edges.id, tbl_nodes.node_name, tbl_nodes.id
         order by tbl_nodes.node_name, tbl_nodes.id"""
     
     cursor.execute(query)
     competence_data = pd.DataFrame(cursor.fetchall(), columns = ["name", "competence", "table_id"])
-    competence_data = CreateCompetenceData(competence_data, "edge_competence")
+    competence_data = CreateCompetenceData(competence_data, "edge_competence", stage)
 
     return competence_data
 
 #Получить компетентность пользователей по проекту
-def GetUserProjectCompetenceData(project_id):
+def GetUserProjectCompetenceData(project_id, stage = None):
     query = f"""select user_name, competence, tbl_userdata.id
         from tbl_users
         inner join tbl_userdata on tbl_userdata.user_id = tbl_users.id
         inner join tbl_roles on tbl_roles.id = tbl_userdata.role_id
         where access_level > 1 and project_id = {project_id}
         order by user_name"""
-    
+
     cursor.execute(query)
     competence_data = pd.DataFrame(cursor.fetchall(), columns = ["name", "competence", "table_id"])
-    competence_data = CreateCompetenceData(competence_data, "project_competence")
+    competence_data = CreateCompetenceData(competence_data, "project_competence", stage)
 
     return competence_data
 
 #Получить компетентность групп пользователей по проекту
-def GetGroupProjectCompetenceData(project_id):
+def GetGroupProjectCompetenceData(project_id, stage = None):
     query = f"""select 
         tbl_groups.group_name, 
         case when count(distinct tbl_userdata.competence) = 1 then max(tbl_userdata.competence) else -1 end competence,
@@ -1467,7 +1612,7 @@ def GetGroupProjectCompetenceData(project_id):
     
     cursor.execute(query)
     competence_data = pd.DataFrame(cursor.fetchall(), columns = ["name", "competence", "table_id"])
-    competence_data = CreateCompetenceData(competence_data, "project_competence")
+    competence_data = CreateCompetenceData(competence_data, "project_competence", stage)
 
     return competence_data
 
@@ -1684,6 +1829,37 @@ def RemoveCompletedState(project_data):
 
 
 #Получить дерево проекта
+def GetAnalyticsTreeDataUsers(project_id):
+    #status = "ce" if use_groups else "de"
+    status = "de"
+
+    query = f"""select ud.user_id, u.user_name 
+    from tbl_userdata ud 
+    inner join tbl_users u on u.id = ud.user_id
+    where ud.project_id = {project_id} and ud.de_completed = True
+    order by u.user_name"""
+    
+    cursor.execute(query)
+    treedata = pd.DataFrame(cursor.fetchall(), columns = ["user_id", "user_name"])
+
+    project_children = []
+    treedata.sort_values(by = "user_name", inplace = True)
+
+    for index, user_row in treedata.iterrows():
+        user_item = {}
+        user_item["label"] = GetShortUsername(user_row["user_name"])
+        user_item["value"] = "project/user/" + str(user_row["user_id"])
+        project_children.append(user_item)
+
+    root = {
+        "label": "Проект",
+        "value": "project",
+        "children" : project_children
+    }
+
+    return [root]
+
+#Получить дерево проекта по группам
 def GetAnalyticsTreeData(project_id, use_groups):
     status = "ce" if use_groups else "de"
 
@@ -1851,8 +2027,10 @@ def GetPriorityInfo(project_data, prop_id = None, group = False):
     for level in range(1, nodes_df["level"].max()):
         level_df = nodes_df[nodes_df["level"] == level]
         for lvl_index, lvl_row in level_df.iterrows():
-            if group: compdata = GetGroupCalculatedCompdata(lvl_row["id"], prop_id)
-            else: compdata = GetCalculatedCompdata(lvl_row["id"], prop_id)
+            if group:
+                compdata = GetGroupCalculatedCompdata(lvl_row["id"], prop_id)
+            else:
+                compdata = GetCalculatedCompdata(lvl_row["id"], prop_id)
             
             matrix = MakeMatrix(compdata)
             local_priorities = GetLocalPriorities(matrix)
@@ -1887,7 +2065,12 @@ def GetPriorityInfo(project_data, prop_id = None, group = False):
 
     return nodes_df, edges_df
 
-
+#Получить данные для выгрузки в файл
+def GetTestDF(table_data):
+    #df = pd.DataFrame({"a": [1, 2, 3, 4], "b": [2, 1, 5, 6], "c": ["x", "x", "y", "y"]})
+    columns = table_data.pop(0) # Первая строка таблицы будет загоровком. Удаляем её из данных
+    df = pd.DataFrame(table_data, columns=columns)
+    return df
 
 
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -2021,9 +2204,17 @@ def CreateTableContent(columns, data):
     return [head, body]
 
 #Cоздать список компетентностей
-def CreateCompetenceData(competence_data, competence_type):
+def CreateCompetenceData(competence_data, competence_type, stage = None):
     competence_data["name_col"] = [row["name"] for index, row in competence_data.iterrows()]
-    competence_data["competence_col"] = [dmc.NumberInput(id = {"type": competence_type, "index": row["table_id"]}, value = row["competence"] if row["competence"] > 0 else "", min = 0, max = 1, step = 0.05, clampBehavior = "strict", decimalScale = 2) for index, row in competence_data.iterrows()]
+    if stage:
+        if stage > 2:
+            competence_data["competence_col"] = [
+                dmc.Text(children = row["competence"] if row["competence"] > 0 else "") 
+                for index, row in competence_data.iterrows()]
+        else:
+            competence_data["competence_col"] = [dmc.NumberInput(id = {"type": competence_type, "index": row["table_id"]}, value = row["competence"] if row["competence"] > 0 else "", min = 0, max = 1, step = 0.05, clampBehavior = "strict", decimalScale = 2) for index, row in competence_data.iterrows()]
+    else:
+        competence_data["competence_col"] = [dmc.NumberInput(id = {"type": competence_type, "index": row["table_id"]}, value = row["competence"] if row["competence"] > 0 else "", min = 0, max = 1, step = 0.05, clampBehavior = "strict", decimalScale = 2) for index, row in competence_data.iterrows()]
     competence_data.drop(["name", "competence", "table_id"], axis = 1, inplace = True)
     competence_data = competence_data.to_dict("records")
 
@@ -2031,65 +2222,97 @@ def CreateCompetenceData(competence_data, competence_type):
 
 #Получить данные выпадающего списка
 def GetSelectData(select_id, project_id = 0, group_checked = False):
-    if select_id == "status_select":
-        query = "select status_code, status_name, status_stage from tbl_status order by status_stage"
-        cursor.execute(query)
-        data = pd.DataFrame(cursor.fetchall(), columns = ["value", "label", "stage"]).to_dict("records")
+
+    try:
+        conn = psycopg2.connect(host=DB_SERVER, port = DB_PORT, database=DB_DATABASE, user=DB_USERNAME, password=DB_PASSWORD)
+        cur = conn.cursor()
+
+        if select_id == "status_select":
+            query = "select status_code, status_name, status_stage from tbl_status order by status_stage"
+            cur.execute(query)
+            data = pd.DataFrame(cur.fetchall(), columns = ["value", "label", "stage"]).to_dict("records")
+
+        if select_id == "project_user":
+            query = f"""select u.id, u.user_name 
+            from tbl_users u
+            inner join tbl_userdata ud on u.id = ud.user_id
+            where ud.project_id = {project_id}
+            order by u.user_name"""
+            cur.execute(query)
+            data = pd.DataFrame(cur.fetchall(), columns = ["value", "label"])
+            data["value"] = data["value"].astype(str)
+            data = data.to_dict("records")
+
+        if select_id == "not_project_user":
+            query = f"""select u.id, u.user_name
+            from tbl_users u
+            left outer join
+            (select ud.user_id from tbl_userdata ud where ud.project_id = {project_id}) ud on ud.user_id = u.id
+            where ud.user_id is null
+            order by u.user_name"""
+            cur.execute(query)
+            data = pd.DataFrame(cur.fetchall(), columns = ["value", "label"])
+            data["value"] = data["value"].astype(str)
+            data = data.to_dict("records")
 
 
-    if select_id == "user_select":
-        query = "select id, user_name from tbl_users order by user_name"
-        cursor.execute(query)
-        data = pd.DataFrame(cursor.fetchall(), columns = ["value", "label"])
-        
-        data["value"] = data["value"].astype(str)
-        data = data.to_dict("records")
+        if select_id == "user_select":
+            query = "select id, user_name from tbl_users order by user_name"
+            cur.execute(query)
+            data = pd.DataFrame(cur.fetchall(), columns = ["value", "label"])
+            
+            data["value"] = data["value"].astype(str)
+            data = data.to_dict("records")
 
-    if select_id == "role_select":
-        query = "select role_code, role_name, access_level from tbl_roles order by access_level"
-        cursor.execute(query)
-        data = pd.DataFrame(cursor.fetchall(), columns = ["value", "label", "access_level"])
+        if select_id == "role_select":
+            query = "select role_code, role_name, access_level from tbl_roles order by access_level"
+            cur.execute(query)
+            data = pd.DataFrame(cur.fetchall(), columns = ["value", "label", "access_level"])
 
-        data["value"] = data["value"].astype(str)
-        data = data.to_dict("records")
+            data["value"] = data["value"].astype(str)
+            data = data.to_dict("records")
 
-    if select_id == "competence_select":
-        if group_checked:
-            query = f"select id, group_name from tbl_groups where project_id = {project_id}"
-        else:
-             query = f"""select tbl_users.id, user_name 
-                from tbl_users 
-                inner join tbl_userdata on tbl_userdata.user_id = tbl_users.id
-                inner join tbl_roles on tbl_roles.id = tbl_userdata.role_id
-                where tbl_roles.access_level > 1 and tbl_userdata.project_id = {project_id}
-                order by user_name"""
-             
-        cursor.execute(query)
-        data = pd.DataFrame(cursor.fetchall(), columns = ["value", "label"])
+        if select_id == "competence_select":
+            if group_checked:
+                query = f"select id, group_name from tbl_groups where project_id = {project_id} order by group_name"
+            else:
+                query = f"""select tbl_users.id, user_name 
+                    from tbl_users 
+                    inner join tbl_userdata on tbl_userdata.user_id = tbl_users.id
+                    inner join tbl_roles on tbl_roles.id = tbl_userdata.role_id
+                    where tbl_roles.access_level > 1 and tbl_userdata.project_id = {project_id}
+                    order by user_name"""
+                
+            cur.execute(query)
+            data = pd.DataFrame(cur.fetchall(), columns = ["value", "label"])
 
-        data["value"] = data["value"].astype(str)
-        data = data.to_dict("records")
+            data["value"] = data["value"].astype(str)
+            data = data.to_dict("records")
 
-    if select_id == "source_node_select":
-        query = f"""select distinct tbl_nodes.id, node_name
-            from tbl_nodes inner join tbl_edges on tbl_edges.source_id = tbl_nodes.id
-            where tbl_nodes.project_id = {project_id}
-            order by node_name, tbl_nodes.id"""
-        cursor.execute(query)
-        data = pd.DataFrame(cursor.fetchall(), columns = ["value", "label"])
+        if select_id == "source_node_select":
+            query = f"""select distinct tbl_nodes.id, node_name
+                from tbl_nodes inner join tbl_edges on tbl_edges.source_id = tbl_nodes.id
+                where tbl_nodes.project_id = {project_id}
+                order by node_name, tbl_nodes.id"""
+            cur.execute(query)
+            data = pd.DataFrame(cur.fetchall(), columns = ["value", "label"])
 
-        data["value"] = data["value"].astype(str)
-        data = data.to_dict("records")
+            data["value"] = data["value"].astype(str)
+            data = data.to_dict("records")
 
-    if select_id == "grouplist_select":
-        query = f"select id, group_name from tbl_groups where project_id = {project_id}"
-        cursor.execute(query)
-        data = pd.DataFrame(cursor.fetchall(), columns = ["value", "label"])
+        if select_id == "grouplist_select":
+            query = f"select id, group_name from tbl_groups where project_id = {project_id} order by group_name"
+            cur.execute(query)
+            data = pd.DataFrame(cur.fetchall(), columns = ["value", "label"])
 
-        data["value"] = data["value"].astype(str)
-        data = data.to_dict("records")
+            data["value"] = data["value"].astype(str)
+            data = data.to_dict("records")
 
-    return data
+        cur.close()
+        conn.close()
+        return data
+    except: 
+        return None
 
 #Получить данные сравнительной оценки для пользователя
 def GetUserNodesForSimpleGrid(source_node_id, project_data, elements = None):
@@ -2131,6 +2354,47 @@ def SaveCompEvalToBD(selected_data):
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 #Управление группами -------------------------------------------------------------------------------------------------------------------------------------------------------------------
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#Получить группу по id
+def GetGroupDict(group_id):
+    query = f"select id, group_name, project_id from tbl_groups where id = '{group_id}'"
+    try:
+        conn = psycopg2.connect(host=DB_SERVER, port = DB_PORT, database=DB_DATABASE, user=DB_USERNAME, password=DB_PASSWORD)
+        cur = conn.cursor()
+        cur.execute(query)
+        #columns =("id", "group_name", "project_id")
+        columns = [desc[0] for desc in cur.description]
+        res = cur.fetchone()
+        result = dict(zip(columns, res))
+        cur.close()
+        conn.close()
+        return result
+    except: 
+        return None
+
+
+#Получить содержимое таблицы групп из раздела "Управление группами"
+def GetProjectUserGroupDict(project_id):
+    query = f"select id, group_name, project_id from tbl_groups where project_id = {project_id}"
+    result = {}
+    try:
+        conn = psycopg2.connect(host=DB_SERVER, port = DB_PORT, database=DB_DATABASE, user=DB_USERNAME, password=DB_PASSWORD)
+        cur = conn.cursor()
+        cur.execute(query)
+        res = cur.fetchall()
+        #columns = ("id", "group_name", "project_id")
+        columns = [desc[0] for desc in cur.description]
+        for row in res:
+            rd = dict(zip(columns, row))
+            result[rd["id"]] = rd
+        cur.close()
+        conn.close()
+        return result
+    except: 
+        return None
+
+    
+
 
 
 #Проверить наличие группы с таким названием в проекте

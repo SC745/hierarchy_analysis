@@ -19,6 +19,8 @@ dash.register_page(__name__)
 def GetEdgeCheckboxes(source_node, element_data, project_data):
     nodes_df, edges_df = functions.ElementsToDfs(element_data["elements"])
 
+    checked_count = 0
+
     lowerlevel_df = nodes_df.loc[nodes_df["level"] == source_node["data"]["level"] + 1]
     accessable_nodes = list(edges_df.loc[(edges_df["source"] == source_node["data"]["id"]) & ~(edges_df["id"].isin(list(element_data["state"]["manually_deleted"].keys()) + list(element_data["state"]["cascade_deleted"].keys())))]["target"])
     cascade_accessable_nodes = list(edges_df.loc[(edges_df["source"] == source_node["data"]["id"]) & (edges_df["id"].isin(list(element_data["state"]["cascade_deleted"].keys())))]["target"])
@@ -30,13 +32,19 @@ def GetEdgeCheckboxes(source_node, element_data, project_data):
         edge_checkbox.id = {"type": "edge_checkbox", "index": row["id"]}
         edge_checkbox.label = row["name"]
         edge_checkbox.checked = row["id"] in accessable_nodes
+        if row["id"] in accessable_nodes:
+            edge_checkbox.checked = True
+            checked_count += 1
+        else:
+            edge_checkbox.checked = False
+
         edge_checkbox.disabled = row["id"] in cascade_accessable_nodes or project_data["status"]["stage"] != 2 or project_data["role"]["access_level"] < 2
 
         if element_data["state"]["selected"] and "target" in element_data["state"]["selected"]["data"] and element_data["state"]["selected"]["data"]["target"] == row["id"]: edge_checkbox.style = {"background-color": "#e8f3fc"}
 
         edge_checkboxes.append(edge_checkbox)
 
-    return edge_checkboxes
+    return edge_checkboxes, checked_count
 
 def layout():
     #Удаление ключей других страниц
@@ -66,12 +74,44 @@ def layout():
                     children = [
                         dmc.Box(
                             children = [
-                                dmc.Flex(children=dmc.NavLink(id = {"type":"menu_navlink", "index":"/projects"}, label = "К списку проектов", leftSection = DashIconify(icon = "mingcute:list-check-fill"))),
-                                dmc.Center(dmc.Text(id="project_name_header_text", size='lg')),                                
+                                dmc.Flex(
+                                    children=
+                                    dmc.Menu(
+                                        children = [
+                                            dmc.MenuTarget(dmc.NavLink(label = dmc.Text("Проект"), leftSection = DashIconify(icon = "mingcute:menu-line", width=25))),
+                                            dmc.MenuDropdown(
+                                                children = [
+                                                    dmc.MenuItem(id = {"type":"menu_navlink", "index":"/settings"}, children = dmc.Text("Настройки"), leftSection = DashIconify(icon = "mingcute:settings-3-line", width=20), disabled = True),
+                                                    dmc.MenuItem(id = {"type":"menu_navlink", "index":"/analytics"}, children = dmc.Text("Аналитика"), leftSection = DashIconify(icon = "mingcute:chart-line-fill", width=20), disabled = True),
+                                                    dmc.MenuItem(id = "restore_initial_hierarchy", children = dmc.Text("Восстановить базовую иерархию"), leftSection = DashIconify(icon = "mingcute:refresh-3-fill", width=20), disabled = True),
+                                                    dmc.MenuDivider(),
+                                                    dmc.MenuItem(children = dmc.Checkbox(
+                                                        id = {"type": "stage_completed", "index": "de_completed"}, 
+                                                        label = dmc.Text("Оценка зависимостей завершена"), 
+                                                        checked = False, 
+                                                        disabled=True
+                                                        ),
+                                                    ),
+                                                    dmc.MenuItem(children = dmc.Checkbox(
+                                                        id = {"type": "stage_completed", "index": "ce_completed"}, 
+                                                        label = dmc.Text("Сравнительная оценка завершена"), 
+                                                        checked = False, 
+                                                        disabled = True
+                                                        ), 
+                                                    ),
+                                                    dmc.MenuDivider(),
+                                                    dmc.MenuItem(id = {"type":"menu_navlink", "index":"/projects"}, leftSection = DashIconify(icon = "mingcute:list-check-line", width=20), children = "Список проектов")
+                                                ]
+                                            )
+                                        ],
+                                        trigger="hover",
+                                    ),
+                                ),
+                                dmc.Center(dmc.Text(id="project_name_header_text", size='lg')),
                                 dmc.Group(
                                     children=[
                                         dmc.Center(dmc.Text(functions.GetShortUsername(current_user.userdata["name"]))),
-                                        dmc.Flex(children=dmc.NavLink(id = {"type": "logout_button", "index": "project"}, leftSection = DashIconify(icon = "mingcute:exit-fill"), c='red')),
+                                        dmc.Flex(children=dmc.NavLink(id = {"type": "logout_button", "index": "project"}, leftSection = DashIconify(icon = "mingcute:exit-fill", width=25), c='red')),
                                     ]
                                 ),
                             ],
@@ -129,18 +169,8 @@ def layout():
                                                     p = "md",
                                                     gap = 5
                                                 ),
-                                                dmc.Accordion(
-                                                    children = [
-                                                        dmc.AccordionItem(
-                                                            children = [
-                                                                dmc.AccordionControl("Элементы нижнего уровня"),
-                                                                dmc.AccordionPanel(dmc.Stack(id = "edge_checkboxes", children = [], gap = 0))
-                                                            ],
-                                                            value = "elements"
-                                                        ),
-                                                    ],
-                                                    value="elements"
-                                                )
+                                                dmc.Text("Элементы нижнего уровня", pl=20),
+                                                dmc.ScrollArea(dmc.Stack(id = "edge_checkboxes", children = [], gap = 0), h="100%", w="100%"),
                                             ],
                                         ),
                                         dcc.Store(id = "current_node_id", storage_type = "memory", data = None)
@@ -154,52 +184,6 @@ def layout():
                 ),
                 dmc.AppShellMain(
                     children=[
-                        dmc.Affix(
-                            dmc.Group(
-                                children=[
-                                    dmc.Menu(
-                                        children = [
-                                            dmc.MenuTarget(dmc.Button("Проект", variant="outline", color="var(--mantine-color-dark-7)", w=120)),
-                                            dmc.MenuDropdown(
-                                                children = [
-                                                    dmc.MenuItem(id = {"type":"menu_navlink", "index":"/settings"}, leftSection = DashIconify(icon = "mingcute:settings-3-line"), children = "Настройки", disabled = True),
-                                                    dmc.MenuItem(id = {"type":"menu_navlink", "index":"/analytics"}, leftSection = DashIconify(icon = "mingcute:chart-line-fill"), children = "Аналитика", disabled = True),
-                                                    dmc.MenuItem(id = "restore_initial_hierarchy", leftSection = DashIconify(icon = "mingcute:refresh-3-fill"), children = "Восстановить базовую иерархию", disabled = True),
-                                                    dmc.MenuDivider(),
-                                                    dmc.MenuItem(id = {"type":"menu_navlink", "index":"/projectswww"}, leftSection = DashIconify(icon = "mingcute:list-check-fill"), children = "Список проектов")
-                                                ]
-                                            )
-                                        ],
-                                        trigger="hover",
-                                    ),
-                                    dmc.Menu(
-                                        children = [
-                                            dmc.MenuTarget(dmc.Button("Состояние", variant="outline", color="var(--mantine-color-dark-7)", w=120)),
-                                            dmc.MenuDropdown(
-                                                children = [
-                                                    dmc.MenuItem(children = dmc.Checkbox(
-                                                        id = {"type": "stage_completed", "index": "de_completed"}, 
-                                                        label = "Оценка зависимостей завершена", 
-                                                        checked = False, 
-                                                        disabled=True
-                                                        ),
-                                                    ),
-                                                    dmc.MenuItem(children = dmc.Checkbox(
-                                                        id = {"type": "stage_completed", "index": "ce_completed"}, 
-                                                        label = "Сравнительная оценка завершена", 
-                                                        checked = False, 
-                                                        disabled = True
-                                                        ), 
-                                                    ),
-                                                ]
-                                            )
-                                        ],
-                                        trigger="hover",
-                                    ),
-                                ]
-                            ),
-                            position={"top": "55px", "left": "lg"} 
-                        ),                        
                         cyto.Cytoscape(
                             id="graph",
                             layout={"name": "preset"},
@@ -515,16 +499,18 @@ def SelectElement(input, project_data_store, element_data_store):
 
     functions.ColorElements(element_data)
 
+    edge_checkboxes, checked_count = GetEdgeCheckboxes(current_node, element_data, project_data)
+
     output = {}
     output["current_node_id"] = current_node["data"]["id"]
     output["name_input_value"] = current_node["data"]["name"]
     output["node_checkbox_checked"] = current_node["data"]["id"] not in list(element_data["state"]["cascade_deleted"].keys()) + list(element_data["state"]["manually_deleted"].keys())
     output["node_checkbox_disabled"] = current_node["data"]["id"] in element_data["state"]["cascade_deleted"].keys() or project_data["status"]["stage"] > 2 or (project_data["role"]["access_level"] < 3 and project_data["status"]["stage"] == 1) or (project_data["role"]["access_level"] < 2 and project_data["status"]["stage"] == 2)
-    output["edge_checkboxes"] = GetEdgeCheckboxes(current_node, element_data, project_data)
+    output["edge_checkboxes"] = edge_checkboxes
     output["elements"] = element_data["elements"]
     output["prev_action"] = False
     output["element_data"] = json.dumps(element_data, cls = functions.NpEncoder)
-    output["compdata_button"] = "block" if project_data["status"]["stage"] == 3 else "none"
+    output["compdata_button"] = "block" if project_data["status"]["stage"] == 3 and checked_count > 1 else "none"
 
     return output
 

@@ -88,32 +88,36 @@ def GetSimpleGrid(comp_data):
     return dmc.SimpleGrid(cols = matrix_dim + 1, spacing = '0', verticalSpacing = '0', children = simple_grid_children)
 
 def GetSuperiorSet(source_node_name):
+    source_node_text = "'" + source_node_name + "'"
     dmc_SuperiorSet = dmc.Box(
-    children = [
-        dmc.Text(id = "poll_string", 
-            children = [
-                dmc.Text("Согласно критерию ", span = True, inherit = True),
-                dmc.Text(id = "source_node_text", children = source_node_name, span = True, inherit = True, fw=500),
-                dmc.Text(" значимость элемента ", span = True, inherit = True),
-                dmc.Text(id = "target_node1_text", children = "t1_name", span = True, inherit = True, c = "var(--mantine-color-orange-6)"),
-                dmc.Text(" ", span = True, inherit = True),
-                dmc.Text(id = "superiority_text", children = "superiority name", span = True, inherit = True, c = "blue"),
-                dmc.Text(" превосходит значимость элемента ", span = True, inherit = True),
-                dmc.Text(id = "target_node2_text", children = "t2_name", span = True, inherit = True, c = "var(--mantine-color-orange-6)"),
-            ],
-            fz = 24,
-            fw = 400,
-        ),
-        dmc.Slider(
-            id = "superiority_slider",
-            value = 1,
-            min = 1, 
-            max = 9, 
-            restrictToMarks = True,
-            thumbSize = 30,
-            marks= [{"value": index, "label": str(index)} for index in range(1,10)],
-        ),
-    ], p = "lg",)
+        children = [
+            dmc.Text(id = "poll_string", 
+                children = [
+                    dmc.Text("Согласно критерию ", span = True, inherit = True),
+                    dmc.Text(id = "source_node_text", children = source_node_text, span = True, inherit = True, fw=500, c="var(--mantine-color-green-7)"),
+                    dmc.Text(" значимость элемента ", span = True, inherit = True),
+                    dmc.Text(id = "target_node1_text", children = "t1_name", span = True, inherit = True, c = "var(--mantine-color-orange-7)"),
+                    dmc.Text(" ", span = True, inherit = True),
+                    dmc.Text(id = "superiority_text", children = "superiority name", span = True, inherit = True, c = "var(--mantine-color-blue-7)"),
+                    dmc.Text(" превосходит значимость элемента ", span = True, inherit = True),
+                    dmc.Text(id = "target_node2_text", children = "t2_name", span = True, inherit = True, c = "var(--mantine-color-orange-7)"),
+                ],
+                fz = 24,
+                fw = 400,
+            ),
+            dmc.Space(h=30),
+            dmc.Slider(
+                id = "superiority_slider",
+                value = 1,
+                min = 1, 
+                max = 9, 
+                restrictToMarks = True,
+                thumbSize = 30,
+                marks= [{"value": index, "label": str(index)} for index in range(1,10)],
+            ),
+        ],
+        p = "md",
+    )
     
     return dmc_SuperiorSet
 
@@ -146,12 +150,25 @@ def layout():
                     children = [
                         dmc.Flex(
                             children = [
-                                dmc.Flex(children=dmc.NavLink(id = "compeval_to_project", label = "Вернуться к проекту", leftSection = DashIconify(icon = "mingcute:arrow-left-line"))),
+                                dmc.Flex(
+                                    children=
+                                    dmc.Menu(
+                                        children = [
+                                            dmc.MenuTarget(dmc.NavLink(label = "Проект", leftSection = DashIconify(icon = "mingcute:menu-line", width=25))),
+                                            dmc.MenuDropdown(
+                                                children = [
+                                                    dmc.MenuItem(id = "compeval_to_project", leftSection = DashIconify(icon = "mingcute:arrow-left-line", width=20), children = "Вернуться к проекту")
+                                                ]
+                                            )
+                                        ],
+                                        trigger="hover",
+                                    ),
+                                ),
                                 dmc.Center(dmc.Text(project_name_header_text, size='lg')),
                                 dmc.Group(
                                     children=[
                                         dmc.Center(dmc.Text(functions.GetShortUsername(current_user.userdata["name"]))),
-                                        dmc.Flex(children=dmc.NavLink(id = {"type": "logout_button", "index": "compeval"}, leftSection = DashIconify(icon = "mingcute:exit-fill"), c='red')),
+                                        dmc.Flex(children=dmc.NavLink(id = {"type": "logout_button", "index": "compeval"}, leftSection = DashIconify(icon = "mingcute:exit-fill", width=25), c='red')),
                                     ]
                                 ),
                             ],
@@ -159,10 +176,20 @@ def layout():
                         )
                     ], withBorder=True
                 ),
-                dmc.AppShellMain(children=[
-                    dmc.Container(id="comp_simple_grid", children=[], size='90%'),
-                    dmc.Container(id="comp_superior_set", children=GetSuperiorSet(source_node_name), size='90%', display='none')
-                ])
+                dmc.AppShellMain(
+                    children=[
+                        dmc.Box(
+                            children=[
+                                dmc.Space(h=20),
+                                dmc.Container(id="comp_simple_grid", children=[], size='95%'),
+                                dmc.Space(h=20),
+                            ],
+                            bg="var(--mantine-color-blue-1)",
+                        ),
+                        dmc.Divider(),
+                        dmc.Container(id="comp_superior_set", children=GetSuperiorSet(source_node_name), size='80%', display='none')
+                    ],
+                ),
             ],
             header={"height": "50px"},
         )
@@ -286,13 +313,13 @@ def GetOutputs(selected_data):
     
     if selected_data["superior"]:
         radio_value="1"
-        text_from = selected_data["t1_node_name"]
-        text_to = selected_data["t2_node_name"]
+        text_from = "'" + selected_data["t1_node_name"] + "'"
+        text_to = "'" + selected_data["t2_node_name"] + "'"
         superiority_type_text = radio1_text
     else:
         radio_value="2"
-        text_from = selected_data["t2_node_name"]
-        text_to = selected_data["t1_node_name"]
+        text_from = "'" + selected_data["t2_node_name"] + "'"
+        text_to = "'" + selected_data["t1_node_name"] + "'"
         superiority_type_text = radio2_text
 
     output = {}
@@ -416,7 +443,7 @@ def SuperioritySlider(input):
             selected_data["code"] = value_old
             raise PreventUpdate
 
-    calc_outputs = GetOutputs(selected_data)
+    #calc_outputs = GetOutputs(selected_data)
     dmc_SimpleGrid = GetSimpleGrid(comp_data)
 
     superiority_text = comp_data["superiority"][str(value)]
