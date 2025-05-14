@@ -42,7 +42,7 @@ def GetEdgeCheckboxes(source_node, element_data, project_data):
 
         if element_data["state"]["selected"] and "target" in element_data["state"]["selected"]["data"] and element_data["state"]["selected"]["data"]["target"] == row["id"]: edge_checkbox.style = {"background-color": "#e8f3fc"}
 
-        edge_checkboxes.append(edge_checkbox)
+        edge_checkboxes.append(dmc.Tooltip(edge_checkbox, label = "Изменить статус ребра", offset = -10, openDelay = 300, position = "left", withArrow = True, display = "block"))
 
     return edge_checkboxes, checked_count
 
@@ -126,11 +126,11 @@ def layout():
                             children = [
                                 dmc.Group(
                                     children = [
-                                        dmc.ActionIcon(id = {"type": "step_button", "index": "rollback"}, children = DashIconify(icon = "mingcute:corner-down-left-fill", width = 20), size = "input-sm", variant = "default", disabled = True),
-                                        dmc.ActionIcon(id = {"type": "step_button", "index": "cancelrollback"}, children = DashIconify(icon = "mingcute:corner-down-right-fill", width = 20), size = "input-sm", variant = "default", disabled = True),
-                                        dmc.ActionIcon(id = "locate", children = DashIconify(icon = "mingcute:location-line", width = 20), size = "input-sm", variant = "default"),
-                                        dmc.ActionIcon(id = "add_node", children = DashIconify(icon = "mingcute:cross-line", width = 20), size = "input-sm", variant = "light", disabled = True, color = "green"),
-                                        dmc.ActionIcon(id = "save_graph", children = DashIconify(icon = "mingcute:save-2-line", width = 20), size = "input-sm", variant = "light", disabled = True),
+                                        dmc.Tooltip(dmc.ActionIcon(id = {"type": "step_button", "index": "rollback"}, children = DashIconify(icon = "mingcute:corner-down-left-fill", width = 20), size = "input-sm", variant = "default", disabled = True), label = "Отменить действие", offset = 5, openDelay = 300, arrowOffset = 5, position = "bottom-end", withArrow = True, display = "none"),
+                                        dmc.Tooltip(dmc.ActionIcon(id = {"type": "step_button", "index": "cancelrollback"}, children = DashIconify(icon = "mingcute:corner-down-right-fill", width = 20), size = "input-sm", variant = "default", disabled = True), label = "Отменить отмененное действие", offset = 5, openDelay = 300, arrowOffset = 5, position = "bottom-end", withArrow = True, display = "none"),
+                                        dmc.Tooltip(dmc.ActionIcon(id = "locate", children = DashIconify(icon = "mingcute:location-line", width = 20), size = "input-sm", variant = "default"), label = "Вернуться в начало", offset = 5, openDelay = 300, arrowOffset = 5, position = "bottom-end", withArrow = True, display = "block"),
+                                        dmc.Tooltip(dmc.ActionIcon(id = "add_node", children = DashIconify(icon = "mingcute:cross-line", width = 20), size = "input-sm", variant = "light", disabled = True, color = "green"), label = "Добавить вершину", offset = 5, openDelay = 300, arrowOffset = 5, position = "bottom-end", withArrow = True, display = "block"),
+                                        dmc.Tooltip(dmc.ActionIcon(id = "save_graph", children = DashIconify(icon = "mingcute:save-2-line", width = 20), size = "input-sm", variant = "light", disabled = True), label = "Сохранить изменения", offset = 5, openDelay = 300, arrowOffset = 5, position = "bottom-end", withArrow = True, display = "block"),
                                     ],
                                     grow=True,
                                     preventGrowOverflow=False,
@@ -159,7 +159,7 @@ def layout():
                                                         dmc.Flex(
                                                             children = [
                                                                 dmc.TextInput(debounce = 300, id = "name_input", label = dmc.Text("Название"), w = 215, disabled = True),
-                                                                dmc.Checkbox(id = "node_checkbox", size = 36, checked = True)
+                                                                dmc.Tooltip(dmc.Checkbox(id = "node_checkbox", size = 36, checked = True), label = "Изменить статус вершины", offset = 5, openDelay = 300, arrowOffset = 5, position = "bottom-end", withArrow = True, display = "block")
                                                             ],
                                                             gap = "md",
                                                             align = "flex-end",

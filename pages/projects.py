@@ -179,7 +179,6 @@ def CreateProject(clickdata, project_name):
     if not project_name: raise PreventUpdate
     if len(project_name.strip())<3: raise PreventUpdate
     if not functions.InsertNewProject(current_user.userdata["id"], project_name): raise PreventUpdate
-        
-    table_data = functions.CreateTableContent(["Название", "Этап", "Роль в проекте", "Перейти к проекту"], functions.GetUserProjectsTableData(current_user.userdata["id"]))
+    table_data = GetTableProjects(current_user.userdata["id"])
     return table_data, False
 

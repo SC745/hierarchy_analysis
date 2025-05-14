@@ -221,9 +221,6 @@ def GetProjectDfs(project_data, user_id = None):
     nodes_df = GetNodes(project_data["id"])
     edges_df = GetProjectEdges(project_data, user_id)
 
-    print(nodes_df)
-    print(edges_df)
-
     nodes_df, edges_df = ExcludeDeletedElements(nodes_df, edges_df, "delete")
     nodes_df = GetNodeLevels(nodes_df, edges_df)
 
