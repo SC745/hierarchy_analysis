@@ -27,7 +27,7 @@ def GetEdgeCheckboxes(source_node, element_data, project_data):
 
     edge_checkboxes = []
     for index, row in lowerlevel_df.iterrows():
-        edge_checkbox = dmc.Checkbox(py = "xs", pl = "xs")
+        edge_checkbox = dmc.Checkbox(py = "xs", pl = "md")
 
         edge_checkbox.id = {"type": "edge_checkbox", "index": row["id"]}
         edge_checkbox.label = row["name"]
@@ -78,7 +78,7 @@ def layout():
                                     children=
                                     dmc.Menu(
                                         children = [
-                                            dmc.MenuTarget(dmc.NavLink(label = dmc.Text("Проект"), leftSection = DashIconify(icon = "mingcute:menu-line", width=25))),
+                                            dmc.MenuTarget(dmc.NavLink(label = dmc.Text("Проект", fz = "lg"), leftSection = DashIconify(icon = "mingcute:menu-line", width=25))),
                                             dmc.MenuDropdown(
                                                 children = [
                                                     dmc.MenuItem(id = {"type":"menu_navlink", "index":"/settings"}, children = dmc.Text("Настройки"), leftSection = DashIconify(icon = "mingcute:settings-3-line", width=20), disabled = True),
@@ -107,10 +107,10 @@ def layout():
                                         trigger="hover",
                                     ),
                                 ),
-                                dmc.Center(dmc.Text(id="project_name_header_text", size='lg')),
+                                dmc.Center(dmc.Text(id="project_name_header_text", fz = "lg")),
                                 dmc.Group(
                                     children=[
-                                        dmc.Center(dmc.Text(functions.GetShortUsername(current_user.userdata["name"]))),
+                                        dmc.Center(dmc.Text(functions.GetShortUsername(current_user.userdata["name"]), fz = "lg")),
                                         dmc.Flex(children=dmc.NavLink(id = {"type": "logout_button", "index": "project"}, leftSection = DashIconify(icon = "mingcute:exit-fill", width=25), c='red')),
                                     ]
                                 ),
@@ -152,26 +152,25 @@ def layout():
                                 ),
                                 dmc.Box(
                                     children = [
-                                        dmc.Stack(
+                                        dmc.Box(
                                             children = [
-                                                dmc.Stack(
+                                                dmc.Box(
                                                     children = [
                                                         dmc.Flex(
                                                             children = [
-                                                                dmc.TextInput(debounce=500, id = "name_input", label = "Название", disabled = True),
+                                                                dmc.TextInput(debounce = 300, id = "name_input", label = dmc.Text("Название"), w = 215, disabled = True),
                                                                 dmc.Checkbox(id = "node_checkbox", size = 36, checked = True)
                                                             ],
                                                             gap = "md",
                                                             align = "flex-end",
                                                         ),
-                                                        dmc.Button(id = "compdata_button", children = "Оценить", display = "none")
+                                                        dmc.Button(id = "compdata_button", children = "К оценке", display = "none", mt = "xs")
                                                     ],
-                                                    p = "md",
-                                                    gap = 5
+                                                    p = "md"
                                                 ),
-                                                dmc.Text("Элементы нижнего уровня", pl=20),
+                                                dmc.Text("Элементы нижнего уровня", pl="md", pb="xs"),
                                                 dmc.ScrollArea(dmc.Stack(id = "edge_checkboxes", children = [], gap = 0), h="100%", w="100%"),
-                                            ],
+                                            ]
                                         ),
                                         dcc.Store(id = "current_node_id", storage_type = "memory", data = None)
                                     ],
@@ -255,7 +254,7 @@ def layout():
                         )
                     ]),
             ],
-            header={"height": "50px"},
+            header={"height": "45px"},
             aside={"width": "300px"},
         )
         layout = dmc.MantineProvider(layout)

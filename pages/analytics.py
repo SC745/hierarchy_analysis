@@ -456,7 +456,7 @@ def update_store(input):
     element_data = {}
 
     element_data["dep_eval"] = {}
-    element_data["dep_eval"]["elements"] = functions.GetHierarchyPreset(*functions.GetDepEvalGraphDfs(project_data["id"]))
+    element_data["dep_eval"]["elements"] = functions.GetHierarchyPreset(*functions.GetDepEvalGraphDfs(project_data))
     element_data["dep_eval"]["selected"] = None
 
     element_data["comp_eval"] = {}
@@ -645,7 +645,7 @@ def DepEvalGraphProcessing(selected, project_data_store):
     tree_item = GetTreeSelectedItem(selected[0])
 
     element_data = {}
-    element_data["elements"] = functions.GetHierarchyPreset(*functions.GetDepEvalGraphDfs(project_data["id"], tree_item["id"]))
+    element_data["elements"] = functions.GetHierarchyPreset(*functions.GetDepEvalGraphDfs(project_data, tree_item["id"]))
     element_data["selected"] = None
 
     return json.dumps(element_data, cls = functions.NpEncoder), element_data["elements"]

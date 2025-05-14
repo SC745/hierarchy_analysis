@@ -254,13 +254,13 @@ def layout():
                     children = [
                         dmc.Box(
                             children=[
-                                dmc.Flex(children=dmc.NavLink(label = dmc.Text("Настройки"), leftSection = DashIconify(icon = "mingcute:menu-line", width=25))),
-                                dmc.Center(dmc.Text(id="settings_project_caption", size='lg')),
+                                dmc.Flex(children=dmc.NavLink(label = dmc.Text("Настройки", fz = "lg"), leftSection = DashIconify(icon = "mingcute:menu-line", width=25))),
+                                dmc.Center(dmc.Text(id="settings_project_caption", fz = "lg")),
                                 dmc.Box(
                                     children = [
                                         dmc.Group(
                                             children=[
-                                                dmc.Center(dmc.Text(functions.GetShortUsername(current_user.userdata["name"]))),
+                                                dmc.Center(dmc.Text(functions.GetShortUsername(current_user.userdata["name"]), fz = "lg")),
                                                 dmc.Flex(children=dmc.NavLink(id = {"type": "logout_button", "index": "settings"}, leftSection = DashIconify(icon = "mingcute:exit-fill", width=25), c='red')),
                                             ]
                                         ),
@@ -348,7 +348,7 @@ def layout():
                                     children=[
                                         dmc.Box(
                                             children = [
-                                                dmc.Text("Метод объединения иерархий", fz = "xl", fw = 500, pb = "sm"),
+                                                dmc.Text("Метод слияния", fz = "xl", fw = 500, pb = "sm"),
                                                 dmc.RadioGroup(
                                                     id = "settings_mergemethod_radiogroup",
                                                     value = GetMergemethod(project_data["merge_coef"]),
@@ -398,21 +398,21 @@ def layout():
                                                 dmc.StepperStep(
                                                     label="Первый этап",
                                                     description="Построение базовой иерархии",
-                                                    children=dmc.Text("Этап 1: Создание первоначальной иерархии критериев", ta="center", size="lg"),
+                                                    children=dmc.Text("Этап 1: Построение базовой иерархии", ta="center", size="lg"),
                                                     allowStepClick=False,
                                                     allowStepSelect=False,
                                                 ),
                                                 dmc.StepperStep(
                                                     label="Второй этап",
                                                     description="Оценка зависимостей",
-                                                    children=dmc.Text("Этап 2: Эксперты провоизводят оценку актуальности зависимостей", ta="center", size="lg"),
+                                                    children=dmc.Text("Этап 2: Эксперты провоизводят оценку зависимостей", ta="center", size="lg"),
                                                     allowStepClick=False,
                                                     allowStepSelect=False,
                                                 ),
                                                 dmc.StepperStep(
                                                     label="Третий этап",
                                                     description="Сравнительная оценка",
-                                                    children=dmc.Text("Этап 3: Эксперты оценивают степень значисмости зависимостей", ta="center", size="lg"),
+                                                    children=dmc.Text("Этап 3: Эксперты проводят сравнительную оценку", ta="center", size="lg"),
                                                     allowStepClick=False,
                                                     allowStepSelect=False,
                                                 ),
@@ -603,7 +603,7 @@ def layout():
                 ),
                 
             ],
-            header={"height": "50px"},
+            header={"height": "45px"},
             navbar={"width": "300px"},
         )
     
@@ -666,6 +666,7 @@ def PageUpdateOnInterval(input):
             "group_competence_edge_checkbox": State("group_checkbox_edge", "checked"),
             "competence_select_value": State("competence_select", "value"),
             "source_node_value": State("source_node_select", "value"),
+            "mergemethod_value": State("settings_mergemethod_radiogroup", "value"),
 
         }
     },
@@ -704,7 +705,7 @@ def ProjectDataStoreOnChange(input):
     output["status_change_next"] = bool(project_status == "completed")
     
     output["merge_radiogroup_disabled"] = competence_disable
-    output["merge_slider_disabled"] = competence_disable
+    output["merge_slider_disabled"] = competence_disable or input["mergemethod_value"] != "Настроить"
     output["save_project_competence_disabled"] = competence_disable
     #output["competence_radiogroup_disabled"] = competence_disable
     #output["group_checkbox_project_disabled"] = competence_disable
@@ -801,17 +802,15 @@ def RedirectToProject(clickdata):
 
 @dash.callback(
     Output("mergevalue_slider", "value"),
-    Output("mergevalue_slider", "disabled"),
     Input("settings_mergemethod_radiogroup", "value"),
     State("mergevalue_slider", "value"),
     prevent_initial_call = True
 )
 def MergemethodChoice(method, slider_value):
     if not method: raise PreventUpdate
-    slider_disabled = bool(method != "Настроить")
     if method != "Настроить": slider_value = merge_radiogroupdata[method]["value"]
 
-    return slider_value, slider_disabled
+    return slider_value
 
 @dash.callback(
     Output("project_data_store", "data", allow_duplicate = True),

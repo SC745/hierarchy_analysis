@@ -20,8 +20,8 @@ def GetTableProjects(user_id):
                     dmc.TableTr(
                         children=[
                             dmc.TableTh("Наименование"),
-                            dmc.TableTh("Этап", w=250),
-                            dmc.TableTh("Роль в проекте",w=150),
+                            dmc.TableTh("Этап", w=350),
+                            dmc.TableTh("Роль в проекте",w=250),
                             dmc.TableTh(children="Открыть", w=80),
                         ]
                     ),
@@ -73,11 +73,11 @@ def layout():
                     children = [
                         dmc.Box(
                             children=[
-                                dmc.Flex(children=dmc.NavLink(id = "create_project_dialog", label = dmc.Text("Создать проект"), leftSection = DashIconify(icon = "mingcute:file-new-line", width=25))),
-                                dmc.Box(dmc.Text(children="Список проектов", size='lg')),
+                                dmc.Flex(children=dmc.NavLink(id = "create_project_dialog", label = dmc.Text("Создать проект", fz = "lg"), leftSection = DashIconify(icon = "mingcute:file-new-line", width=25))),
+                                dmc.Box(dmc.Text(children="Список проектов", fz = "lg")),
                                 dmc.Group(
                                     children=[
-                                        dmc.Center(dmc.Text(functions.GetShortUsername(current_user.userdata["name"]))),
+                                        dmc.Center(dmc.Text(functions.GetShortUsername(current_user.userdata["name"]), fz = "lg")),
                                         dmc.Flex(children=dmc.NavLink(id = {"type": "logout_button", "index": "projects"}, leftSection = DashIconify(icon = "mingcute:exit-fill", width=25), c='red')),
                                     ]
                                 ),
@@ -88,19 +88,13 @@ def layout():
                 ),
                 dmc.AppShellMain(
                     children = [
-                        #dmc.Stack(
-                        #    children = [
-                                dmc.Table(id = "projects_table", children = [], highlightOnHover = True, withTableBorder = True, withColumnBorders=True
-                                )
-                     #       ],
-                        #    gap = "xs"
-                        #)
+                        dmc.Table(id = "projects_table", children = [], highlightOnHover = True, withTableBorder = True, withColumnBorders=True, fz = "lg")
                     ],
                     mt = "sm",
                     px = "md"
                 ),
             ],
-            header={"height": "50px"},
+            header={"height": "45px"},
         )
     
         layout = dmc.MantineProvider(layout)

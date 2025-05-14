@@ -154,7 +154,7 @@ def layout():
                                     children=
                                     dmc.Menu(
                                         children = [
-                                            dmc.MenuTarget(dmc.NavLink(label = "Проект", leftSection = DashIconify(icon = "mingcute:menu-line", width=25))),
+                                            dmc.MenuTarget(dmc.NavLink(label = dmc.Text("Проект", fz = "lg"), leftSection = DashIconify(icon = "mingcute:menu-line", width=25))),
                                             dmc.MenuDropdown(
                                                 children = [
                                                     dmc.MenuItem(id = "compeval_to_project", leftSection = DashIconify(icon = "mingcute:arrow-left-line", width=20), children = "Вернуться к проекту")
@@ -164,10 +164,10 @@ def layout():
                                         trigger="hover",
                                     ),
                                 ),
-                                dmc.Center(dmc.Text(project_name_header_text, size='lg')),
+                                dmc.Center(dmc.Text(project_name_header_text, fz = "lg")),
                                 dmc.Group(
                                     children=[
-                                        dmc.Center(dmc.Text(functions.GetShortUsername(current_user.userdata["name"]))),
+                                        dmc.Center(dmc.Text(functions.GetShortUsername(current_user.userdata["name"]), fz = "lg")),
                                         dmc.Flex(children=dmc.NavLink(id = {"type": "logout_button", "index": "compeval"}, leftSection = DashIconify(icon = "mingcute:exit-fill", width=25), c='red')),
                                     ]
                                 ),
@@ -184,14 +184,14 @@ def layout():
                                 dmc.Container(id="comp_simple_grid", children=[], size='95%'),
                                 dmc.Space(h=20),
                             ],
-                            bg="var(--mantine-color-blue-1)",
+                            bg="var(--mantine-color-dark-0)",
                         ),
                         dmc.Divider(),
                         dmc.Container(id="comp_superior_set", children=GetSuperiorSet(source_node_name), size='80%', display='none')
                     ],
                 ),
             ],
-            header={"height": "50px"},
+            header={"height": "45px"},
         )
 
         layout = dmc.MantineProvider(layout)

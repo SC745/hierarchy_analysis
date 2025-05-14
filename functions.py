@@ -10,11 +10,11 @@ from werkzeug.security import generate_password_hash,  check_password_hash
 
 #Соединение с БД
 
-DB_SERVER = "192.168.1.122"
+DB_SERVER = "localhost"
 DB_PORT = 5432
 DB_DATABASE = "hierarchy"
 DB_USERNAME = "postgres"
-DB_PASSWORD = "postgres"
+DB_PASSWORD = "228228"
 
 #connection = psycopg2.connect(host='localhost', database='hierarchy', user='postgres', password='228228', port = 5432)
 #connection = psycopg2.connect(host='192.168.1.102', database='hierarchy', user='postgres', password='228228', port = 5432)
@@ -169,7 +169,7 @@ def GetEdgedata(project_id, user_id):
     return edgedata
 
 #Получить ребра с коэффициентом объединения
-def GetMergedEdges(project_id):
+def GetMergedEdges(project_data):
     query = f"""select 
         rated_edges.uuid, 
         source.uuid as source_id, 
@@ -182,16 +182,16 @@ def GetMergedEdges(project_id):
             sum(tbl_edgedata.competence * (not deleted)::int) / sum(tbl_edgedata.competence) as merge_coef,
             uuid,
             case 
-                when 0.8 > 0 and sum(tbl_edgedata.competence * (not deleted)::int) / sum(tbl_edgedata.competence) < 0.8 then true
-                when 0.8 > 0 and sum(tbl_edgedata.competence * (not deleted)::int) / sum(tbl_edgedata.competence) >= 0.8 then false
-                when 0.8 = 0 and sum(tbl_edgedata.competence * (not deleted)::int) / sum(tbl_edgedata.competence) = 0.8 then true
+                when {project_data["merge_coef"]} > 0 and sum(tbl_edgedata.competence * (not deleted)::int) / sum(tbl_edgedata.competence) < {project_data["merge_coef"]} then true
+                when {project_data["merge_coef"]} > 0 and sum(tbl_edgedata.competence * (not deleted)::int) / sum(tbl_edgedata.competence) >= {project_data["merge_coef"]} then false
+                when {project_data["merge_coef"]} = 0 and sum(tbl_edgedata.competence * (not deleted)::int) / sum(tbl_edgedata.competence) = {project_data["merge_coef"]} then true
             end as deleted
             from
             tbl_edgedata
             inner join tbl_userdata on tbl_userdata.user_id = tbl_edgedata.user_id
             inner join tbl_edges on tbl_edges.id = tbl_edgedata.edge_id
             where
-            tbl_edges.project_id = {project_id} and
+            tbl_edges.project_id = {project_data["id"]} and
             tbl_userdata.de_completed = true
             group by uuid
         ) as rated_edges
@@ -212,7 +212,7 @@ def GetProjectEdges(project_data, user_id):
         edges = GetEdgedata(project_data["id"], user_id)
         if not len(edges): edges = GetEdges(project_data["id"])
     else:
-        edges = GetMergedEdges(project_data["id"])
+        edges = GetMergedEdges(project_data)
 
     return edges
 
@@ -221,17 +221,20 @@ def GetProjectDfs(project_data, user_id = None):
     nodes_df = GetNodes(project_data["id"])
     edges_df = GetProjectEdges(project_data, user_id)
 
+    print(nodes_df)
+    print(edges_df)
+
     nodes_df, edges_df = ExcludeDeletedElements(nodes_df, edges_df, "delete")
     nodes_df = GetNodeLevels(nodes_df, edges_df)
 
     return nodes_df, edges_df
 
 #Получить датафреймы вершин и ребер из базы для графа аналитики
-def GetDepEvalGraphDfs(project_id, user_id = None):
-    nodes_df = GetNodes(project_id)
+def GetDepEvalGraphDfs(project_data, user_id = None):
+    nodes_df = GetNodes(project_data["id"])
 
-    if user_id: edges_df = GetEdgedata(project_id, user_id)
-    else: edges_df = GetMergedEdges(project_id)
+    if user_id: edges_df = GetEdgedata(project_data["id"], user_id)
+    else: edges_df = GetMergedEdges(project_data)
 
     nodes_df, edges_df = ExcludeDeletedElements(nodes_df, edges_df, "highlight")
     nodes_df = GetNodeLevels(nodes_df, edges_df)
@@ -2068,7 +2071,7 @@ def GetPriorityInfo(project_data, prop_id = None, group = False):
 #Получить данные для выгрузки в файл
 def GetTestDF(table_data):
     #df = pd.DataFrame({"a": [1, 2, 3, 4], "b": [2, 1, 5, 6], "c": ["x", "x", "y", "y"]})
-    columns = table_data.pop(0) # Первая строка таблицы будет загоровком. Удаляем её из данных
+    columns = table_data.pop(0) # Первая строка таблицы будет заголовком. Удаляем её из данных
     df = pd.DataFrame(table_data, columns=columns)
     return df
 
@@ -2151,41 +2154,6 @@ def GetElementData(project_data, user_id):
     element_data["elements"] = elements
     element_data["state"] = state
     element_data["steps"] = steps
-
-    return element_data
-
-#Получить первоначальную информацию об элементах иерархии на странице "Аналитика"
-def GetAnalyticsGraphElementData(project_data, item_type, item_id, status_code):
-    if status_code == "dep_eval":
-        if item_type == "user":
-            nodes_df = GetNodes(project_data["id"])
-            edges_df = GetEdgedata(project_data["id"], item_id)
-
-            project_data["status"]["code"] == status_code
-            nodes_df, edges_df = ExcludeDeletedElements(nodes_df, edges_df, project_data, "highlight")
-            nodes_df = GetNodeLevels(nodes_df, edges_df)
-
-            elements = GetHierarchyPreset(nodes_df, edges_df)
-
-        if item_type == "project":
-            #item_id должно быть None
-            elements = GetHierarchyPreset(*GetProjectDfs(project_data, item_id))
-
-    if status_code == "comp_eval":
-        if item_type == "user": 
-            a = 0
-            #Вывести граф с весами и отношением согласованности для конкретного пользователя
-        if item_type == "group":
-            a = 0
-            #Вывести граф с весами и отношением согласованности для группы пользователей (состав tbl_groupdata)
-        if item_type == "project":
-            a = 0
-            #Вывести граф с весами и отношением согласованности для всего проекта (состав tbl_userdata inner join tbl_roles где "access_level > 1" по проекту)
-
-    element_data = {}
-    element_data["elements"] = elements
-    element_data["selected"] = None
-
 
     return element_data
 
