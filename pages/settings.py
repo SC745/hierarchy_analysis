@@ -164,7 +164,7 @@ def layout():
                     id="dialog_settings_delete_project",
                     opened = False,
                     children=[
-                        dmc.Text("Удалить проект целиком?"),
+                        dmc.Text("Удалить проект?"),
                         dmc.Space(h=20),
                         dmc.Group(
                             [
@@ -388,7 +388,7 @@ def layout():
                                     mb = "lg",
                                     fz = "md"
                                 ),
-                                dmc.Text("Этапы и состояние проекта", fz = "xl", fw = 500, pb = "sm"),
+                                dmc.Text("Этап проекта", fz = "xl", fw = 500, pb = "sm"),
                                 dmc.Space(h=10),
                                 dmc.Stepper(
                                             id="settings_project_stepper",

@@ -61,12 +61,12 @@ def layout():
                     children = [
                         dmc.Box(
                             children=[
-                                dmc.Flex(children=dmc.NavLink(label = dmc.Text("Аналитика"), leftSection = DashIconify(icon = "mingcute:menu-line", width=25))),
+                                dmc.Flex(children=dmc.NavLink(label = dmc.Text("Аналитика", fz = "lg"), leftSection = DashIconify(icon = "mingcute:menu-line", width=25))),
                                 dmc.Box(
                                     children = [
                                         dmc.Group(
                                             children=[
-                                                dmc.Center(dmc.Text(functions.GetShortUsername(current_user.userdata["name"]))),
+                                                dmc.Center(dmc.Text(functions.GetShortUsername(current_user.userdata["name"]), fz = "lg")),
                                                 dmc.Flex(children=dmc.NavLink(id = {"type": "logout_button", "index": "analytics"}, leftSection = DashIconify(icon = "mingcute:exit-fill", width=25), c='red')),
                                             ]
                                         ),
@@ -89,7 +89,7 @@ def layout():
                             children = [
                                 dmc.NavLink(
                                     id = {"type": "analytics_navlink", "index": "dep_eval"},
-                                    label = dmc.Text("Результат оценки связей"),
+                                    label = dmc.Text("Результат оценки зависимостей"),
                                     leftSection = DashIconify(icon = "mingcute:directory-line", width=20),
                                     active = True,
                                 ),
@@ -153,7 +153,7 @@ def layout():
                     children = [
                         dmc.Box(
                             children = [
-                                dmc.Text("Результат оценки связей", fz = 24, fw = 500, p = "sm"),
+                                dmc.Text("Результат оценки зависимостей", fz = 24, fw = 500, p = "sm"),
                                 cyto.Cytoscape(
                                     id = {"type": "analytics_graph", "index": "dep_eval"},
                                     layout = {"name": "preset"},
@@ -396,7 +396,7 @@ def layout():
                     ]
                 ),
             ],
-            header={"height": "50px"},
+            header={"height": "45px"},
             navbar={"width": "310px"},
         )
         layout = dmc.MantineProvider(layout)

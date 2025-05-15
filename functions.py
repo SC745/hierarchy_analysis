@@ -2059,9 +2059,14 @@ def GetPriorityInfo(project_data, prop_id = None, group = False):
 
     for level in range(2, nodes_df["level"].max() + 1):
         level_df = nodes_df[nodes_df["level"] == level]
-        float_fix = 0
-        for lvl_index, lvl_row in level_df.iterrows(): float_fix += lvl_row["priority"]
-        for lvl_index, lvl_row in level_df.iterrows(): nodes_df.loc[lvl_index, "priority"] = round(lvl_row["priority"] * float_fix, 3)
+        priority_sum = level_df["priority"].sum()
+        
+        for lvl_index, lvl_row in level_df.iterrows(): nodes_df.loc[lvl_index, "priority"] = round(lvl_row["priority"] * (1 / priority_sum), 3)
+
+        level_df = nodes_df[nodes_df["level"] == level]
+        priority_sum = level_df["priority"].sum()
+        max_index = level_df[level_df["priority"] == level_df["priority"].max()].index[0]
+        nodes_df.loc[max_index, "priority"] = nodes_df.loc[max_index, "priority"] + (1 - priority_sum)
 
     return nodes_df, edges_df
 

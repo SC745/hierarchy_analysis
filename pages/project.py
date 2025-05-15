@@ -42,7 +42,7 @@ def GetEdgeCheckboxes(source_node, element_data, project_data):
 
         if element_data["state"]["selected"] and "target" in element_data["state"]["selected"]["data"] and element_data["state"]["selected"]["data"]["target"] == row["id"]: edge_checkbox.style = {"background-color": "#e8f3fc"}
 
-        edge_checkboxes.append(dmc.Tooltip(edge_checkbox, label = "Изменить статус ребра", offset = -10, openDelay = 300, position = "left", withArrow = True, display = "block"))
+        edge_checkboxes.append(dmc.Tooltip(edge_checkbox, label = "Изменить состояние ребра", offset = -10, openDelay = 300, position = "left", withArrow = True, display = "block"))
 
     return edge_checkboxes, checked_count
 
@@ -100,7 +100,7 @@ def layout():
                                                         ), 
                                                     ),
                                                     dmc.MenuDivider(),
-                                                    dmc.MenuItem(id = {"type":"menu_navlink", "index":"/projects"}, leftSection = DashIconify(icon = "mingcute:list-check-line", width=20), children = "Список проектов")
+                                                    dmc.MenuItem(id = {"type":"menu_navlink", "index":"/projects"}, leftSection = DashIconify(icon = "mingcute:list-check-line", width=20), children = dmc.Text("Список проектов"))
                                                 ]
                                             )
                                         ],
@@ -159,7 +159,7 @@ def layout():
                                                         dmc.Flex(
                                                             children = [
                                                                 dmc.TextInput(debounce = 300, id = "name_input", label = dmc.Text("Название"), w = 215, disabled = True),
-                                                                dmc.Tooltip(dmc.Checkbox(id = "node_checkbox", size = 36, checked = True), label = "Изменить статус вершины", offset = 5, openDelay = 300, arrowOffset = 5, position = "bottom-end", withArrow = True, display = "block")
+                                                                dmc.Tooltip(dmc.Checkbox(id = "node_checkbox", size = 36, checked = True), label = "Изменить состояние вершины", offset = 5, openDelay = 300, arrowOffset = 5, position = "bottom-end", withArrow = True, display = "block")
                                                             ],
                                                             gap = "md",
                                                             align = "flex-end",
