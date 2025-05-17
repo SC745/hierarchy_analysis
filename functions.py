@@ -16,9 +16,7 @@ DB_DATABASE = "hierarchy"
 DB_USERNAME = "postgres"
 DB_PASSWORD = "228228"
 
-#connection = psycopg2.connect(host='localhost', database='hierarchy', user='postgres', password='228228', port = 5432)
-#connection = psycopg2.connect(host='192.168.1.102', database='hierarchy', user='postgres', password='228228', port = 5432)
-#connection = psycopg2.connect(host='192.168.1.122', database='hierarchy', user='postgres', password='postgres', port = 5432)
+
 connection = psycopg2.connect(host=DB_SERVER, port = DB_PORT, database=DB_DATABASE, user=DB_USERNAME, password=DB_PASSWORD)
 
 cursor = connection.cursor()
@@ -1976,7 +1974,7 @@ def MakeTableData(source_name, target_names, matrix, local_priorities = False, r
     if round_values:
         for i in range(1, len(matrix)):
             for j in range(1, len(matrix[0])):
-                matrix[i][j] = round(matrix[i][j], 3)
+                matrix[i][j] = MathRound(matrix[i][j], 3)
 
     return matrix
 
@@ -2012,7 +2010,7 @@ def GetConsCoef(matrix, local_priorities):
     cons_index = abs(sum(multiplied_cols) - matrix_dim) / (matrix_dim - 1)
 
     global cons_coef_data
-    return round(cons_index / cons_coef_data[matrix_dim], 3)
+    return MathRound(cons_index / cons_coef_data[matrix_dim], 3)
 
 #Получить глобальные приоритеты
 def GetPriorityInfo(project_data, prop_id = None, group = False):
@@ -2061,12 +2059,13 @@ def GetPriorityInfo(project_data, prop_id = None, group = False):
         level_df = nodes_df[nodes_df["level"] == level]
         priority_sum = level_df["priority"].sum()
         
-        for lvl_index, lvl_row in level_df.iterrows(): nodes_df.loc[lvl_index, "priority"] = round(lvl_row["priority"] * (1 / priority_sum), 3)
+        for lvl_index, lvl_row in level_df.iterrows(): nodes_df.loc[lvl_index, "priority"] = MathRound(lvl_row["priority"] * (1 / priority_sum), 3)
 
         level_df = nodes_df[nodes_df["level"] == level]
         priority_sum = level_df["priority"].sum()
         max_index = level_df[level_df["priority"] == level_df["priority"].max()].index[0]
-        nodes_df.loc[max_index, "priority"] = nodes_df.loc[max_index, "priority"] + (1 - priority_sum)
+
+        nodes_df.loc[max_index, "priority"] = MathRound(nodes_df.loc[max_index, "priority"] + (1 - priority_sum), 3)
 
     return nodes_df, edges_df
 
@@ -2082,6 +2081,17 @@ def GetTestDF(table_data):
 #Служебные функции ---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+#Математическое округление
+def MathRound(number, precision):
+    direction = 1 if number > 0 else -1
+    dimension = round(pow(0.1, precision + 1), precision + 1)
+
+    digit = abs(int(number * (1 / dimension))) % 10
+
+    if digit < 5: number -= dimension * digit * direction
+    else: number += dimension * (10 - digit) * direction
+
+    return round(number, precision)
 
 #Создает датафреймы вершин и ребер на основе словаря элементов
 def ElementsToDfs(elements):

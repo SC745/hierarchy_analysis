@@ -234,7 +234,7 @@ def layout():
                     ],
                 ),
                 dmc.Modal(
-                    title=dmc.Text("Удаление группы экспертов проекта", fz = 20),
+                    title=dmc.Text("Удаление группы экспертов", fz = 20),
                     id="settings_dialog_delete_usergroup",
                     opened = False,
                     children=[
@@ -1374,13 +1374,13 @@ def modal_edit(edit_click):
     group_id = ctx.triggered_id["index"]
 
     if group_id == "0":
-        return True, "Создание новой группы экспертов проекта", "", None, "Создать"
+        return True, "Создание новой группы экспертов", "", None, "Создать"
     else:
         edit_click.pop(0)
         if len(edit_click) == edit_click.count(None): raise PreventUpdate
 
         group_data = functions.GetGroupDict(group_id)
-        return True, "Изменение группы экспертов проекта", group_data["group_name"], group_id, "Изменить"
+        return True, "Изменение группы экспертов", group_data["group_name"], group_id, "Изменить"
 
 #Кнопки диалога создания / редактирования группы
 @dash.callback(
