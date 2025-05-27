@@ -14,7 +14,7 @@ DB_SERVER = "localhost"
 DB_PORT = 5432
 DB_DATABASE = "hierarchy"
 DB_USERNAME = "postgres"
-DB_PASSWORD = "228228"
+DB_PASSWORD = "postgres"
 
 
 connection = psycopg2.connect(host=DB_SERVER, port = DB_PORT, database=DB_DATABASE, user=DB_USERNAME, password=DB_PASSWORD)
@@ -64,9 +64,9 @@ cons_coef_data = {
 }
 
 
-#----------------------------------------------------------------------------------------------------
-# Формирование глобальных данных
-#----------------------------------------------------------------------------------------------------
+#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#Формирование глобальных данных ---------------------------------------------------------------------------------------------------------------------------------------------------------
+#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 #Получить содержимое таблицы ролей
 def GetRolesCodeDict():
@@ -300,7 +300,7 @@ def GetHierarchyPreset(nodes_df, edges_df):
                 if "priority" in row: 
                     node_data["priority"] = row["priority"]
                     node_data["cons_coef"] = row["cons_coef"]
-                    node_data["full_name"] = row["name"] + f"\n Вес: {row['priority']}\n ОС: {row['cons_coef']}"
+                    node_data["full_name"] = row["name"] + f"\n Вес: {row['priority']}\n ОС: {MathRound(row['cons_coef'] * 100, 2)}%"
 
                 node_position = {}
                 node_position["x"] = 0
@@ -2466,4 +2466,3 @@ def DeleteUserFromAllProjectGroups(user_id, project_id):
     except: return False
 
     return True
-
